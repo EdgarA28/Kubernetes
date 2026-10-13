@@ -17,6 +17,7 @@ Written against **Kubernetes v1.36**. **Target: the CKA exam.** Labs run in **ba
 | Are starting the course | [`00-foundations/00-01`](00-foundations/00-01-containers-and-why-orchestration.md) — read Domain 0 in order |
 | Want the full topic map, schedule and exam mapping | [`k8s-study-plan.md`](k8s-study-plan.md) |
 | Need a cluster now | [`00-foundations/00-02`](00-foundations/00-02-lab-environment-kind.md), then `labs/cluster-up.sh` |
+| Study on two machines (WSL + Ubuntu) | [Working across two machines](#working-across-two-machines) — and keep your notes in [`notes/`](notes/) |
 | Just finished a lab | Run [`labs/clean-labs.sh`](labs/clean-labs.sh) |
 | Broke the cluster beyond repair | `labs/cluster-down.sh` then `labs/cluster-up.sh` — about a minute |
 | Want every Kubernetes object on one map | [`00-foundations/00-07`](00-foundations/00-07-object-catalogue.md) — the object catalogue |
@@ -47,6 +48,7 @@ kubernetes/
 ├── labs/                      ← kind config + cluster and cleanup scripts
 ├── reference/                 ← glossary, kubectl cheat sheet
 ├── practice/                  ← question banks per domain + mock exams
+├── notes/                     ← YOUR notes and progress (never touched by course updates)
 └── site/                      ← published HTML version of each domain
 ```
 
@@ -96,6 +98,33 @@ Each module follows the same ten-part template:
 
 ---
 
+## Working across two machines
+
+The course is studied on two machines: **WSL2 Ubuntu on the work laptop** and **native Ubuntu on
+the personal machine**. GitHub is the single source of truth.
+
+```
+                    GitHub: EdgarA28/Kubernetes
+            ┌──────────── pull / push ────────────┐
+            ▼                                     ▼
+  work laptop: WSL2 Ubuntu               personal: native Ubuntu
+  ~/k8s-course · Docker Desktop          ~/k8s-course · Docker Engine
+  own kind cluster                       own kind cluster
+```
+
+| Thing | Shared through git? | Notes |
+|---|---|---|
+| Course modules, labs, scripts | ✅ | Updated from one place; you only `git pull` them |
+| Your notes and progress | ✅ | Only in [`notes/`](notes/), so pulls never conflict |
+| The kind cluster | ❌ | Each machine runs its own with `./labs/cluster-up.sh`. Labs start from a fresh namespace, so you can do one module on one machine and the next on the other |
+| Docker | ❌ | WSL: Docker Desktop with WSL integration. Native: Docker Engine. Never both on one machine — see [`00-02`](00-foundations/00-02-lab-environment-kind.md) step 2 |
+| Git identity and GitHub login | ❌ | Set per repo on each clone (`00-02` step 4); sign in to GitHub as EdgarA28 |
+
+**Every session:** `cd ~/k8s-course && git pull` → study and lab → commit and push anything in
+`notes/`.
+
+---
+
 ## Rules of this course
 
 1. **Every lab runs in its own namespace labelled `course=k8s`.** Cleanup is `kubectl delete ns -l course=k8s`.
@@ -107,6 +136,8 @@ Each module follows the same ten-part template:
 ---
 
 ## Progress tracker
+
+Track details (scores, drill times, dates, machine) in [`notes/progress.md`](notes/progress.md); this list is the overview.
 
 - [ ] `00-foundations` read end to end
 - [ ] Ubuntu lab machine: Docker Engine, kubectl, kind, bash/vim setup (`00-02`); `labs/cluster-up.sh` creates a 3-node kind cluster

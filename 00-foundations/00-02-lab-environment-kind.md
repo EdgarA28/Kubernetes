@@ -1,8 +1,8 @@
-# 00-02 — Lab environment: Ubuntu, Docker Engine, kind and kubectl
+# 00-02 — Lab environment: Ubuntu or WSL, Docker, kind and kubectl
 
 > **Module type:** Foundation — hands-on setup
-> **Time:** ~60 minutes
-> **Prerequisites:** an **Ubuntu 22.04 or 24.04** machine (physical or VM) with sudo; `00-01` can be read before or after
+> **Time:** ~60 minutes per machine
+> **Prerequisites:** an **Ubuntu 22.04 or 24.04** machine (physical or VM) with sudo, **or** Windows with **WSL2 Ubuntu + Docker Desktop**; `00-01` can be read before or after
 > **Cost:** €0 — everything runs locally
 > **Maps to:** CKA — the exam is a bash terminal on Linux with `kubectl`, `vim`, and SSH to nodes. This setup reproduces that
 
@@ -97,6 +97,24 @@ the control-plane container so that later labs can reach Services with `curl` or
 
 ## 5. Step by step
 
+### Two supported setups
+
+The course works on either setup, and you can use both: the repository lives on GitHub, and each
+machine has its own disposable cluster (see *Working across two machines* in the
+[README](../README.md#working-across-two-machines)). Everything from `kubectl` upward is identical;
+only **where Docker comes from** differs.
+
+| Step | Native Ubuntu (personal machine) | WSL2 Ubuntu on Windows (work laptop) |
+|---|---|---|
+| 1 — Prepare | As written | As written, plus WSL resource limits (1b) |
+| 2 — Docker | **2a**: install Docker Engine in Ubuntu | **2b**: enable Docker Desktop's WSL integration — **do not** install Docker Engine |
+| 3 — kubectl and kind | As written | As written, inside the WSL Ubuntu shell |
+| 4 — Get the course | Clone to `~/k8s-course` | Clone to `~/k8s-course` in the **Linux** filesystem, never under `/mnt/c` |
+| 5–8 | As written | As written |
+
+Run every command in this module **inside the Ubuntu shell** — on WSL, that is the Ubuntu terminal,
+not PowerShell.
+
 ### Step 1 — Prepare the machine
 
 | Resource | Minimum | Comfortable |
@@ -104,6 +122,17 @@ the control-plane container so that later labs can reach Services with `curl` or
 | CPU | 2 | **4** |
 | RAM | 6 GB | **8 GB+** |
 | Disk | 20 GB free | 40 GB free |
+
+**1b (WSL only).** On WSL the CPU and memory available to Docker are set by WSL itself, not by
+Ubuntu. On Windows, create or edit `%USERPROFILE%\.wslconfig`:
+
+```ini
+[wsl2]
+memory=8GB
+processors=4
+```
+
+then run `wsl --shutdown` in PowerShell and start Ubuntu and Docker Desktop again.
 
 ```bash
 sudo apt-get update && sudo apt-get upgrade -y
@@ -121,7 +150,10 @@ EOF
 sudo sysctl --system | grep inotify
 ```
 
-### Step 2 — Install Docker Engine
+> On WSL, all distros (including Docker Desktop's own) run on one shared Linux kernel. Apply the
+> setting anyway; if Pods still fail with *too many open files*, see gotcha 8.
+
+### Step 2a — Install Docker Engine (native Ubuntu only)
 
 From Docker's official apt repository (Ubuntu's own `docker.io` package works too, but lags):
 
@@ -142,6 +174,35 @@ docker run --rm hello-world
 
 > Membership of the `docker` group is equivalent to root on this machine. Fine for a lab box;
 > remember it when you reach Domain 6.
+
+### Step 2b — Use Docker Desktop from WSL (WSL only)
+
+Docker Desktop runs the engine in its own WSL distro and can expose it to your Ubuntu distro. The
+`docker` command in Ubuntu then talks to Docker Desktop's engine through `/var/run/docker.sock`.
+
+1. Start **Docker Desktop** on Windows and wait until it reports that the engine is running.
+2. Docker Desktop → **Settings** → **Resources** → **WSL integration**: turn on **Enable
+   integration with my default WSL distro** and the switch for **Ubuntu**. Click **Apply & restart**.
+3. Close the Ubuntu terminal and open a new one, then check:
+
+```bash
+ls -l /var/run/docker.sock      # must exist
+command -v docker               # /usr/bin/docker (a link into /mnt/wsl/docker-desktop/…)
+docker version --format '{{.Server.Version}}'
+docker run --rm hello-world
+```
+
+If `docker` reports *failed to connect to the docker API at unix:///var/run/docker.sock … no such
+file or directory*, the integration is not enabled for this distro (step 2), or Docker Desktop is
+not running (step 1).
+
+**Do not also install Docker Engine (step 2a) inside WSL.** Both want `/var/run/docker.sock`;
+running both causes confusing, intermittent failures. Pick one engine per machine.
+
+> **Work laptops:** Docker Desktop is free for personal use, education and small companies; larger
+> companies need a paid subscription. If your employer does not license it, use step 2a inside WSL
+> instead (WSL Ubuntu has systemd enabled, so Docker Engine runs there as on native Ubuntu) and
+> switch Docker Desktop's WSL integration off.
 
 ### Step 3 — Install kubectl and kind
 
@@ -176,14 +237,22 @@ kind version
 
 ### Step 4 — Get the course onto the lab machine
 
-The course is a git repository. Clone it (or copy it) to the lab machine:
+The course is a git repository on GitHub. Clone it on each lab machine:
 
 ```bash
-git clone <your-repo-url> ~/k8s-course      # or: scp -r user@pc:path/kubernetes ~/k8s-course
+git clone https://github.com/EdgarA28/Kubernetes.git ~/k8s-course
 cd ~/k8s-course
+git config user.name  "Edgar Ayala"                   # this repo only — leaves any global (work) identity alone
+git config user.email "edgar.ayala2893@gmail.com"
 ```
 
 All lab commands assume you run them **from the course root** (`~/k8s-course`).
+
+- **On WSL, keep the clone in the Linux filesystem** (`~/…`), not under `/mnt/c/…`. Linux paths are
+  much faster in WSL and avoid line-ending and executable-bit problems with the lab scripts.
+- **GitHub access** is per machine. Over HTTPS, git asks you to sign in (use the **EdgarA28**
+  account, not a work account); with SSH, each machine needs its own key added to EdgarA28.
+- Start every session with `git pull`; your own notes go in `notes/` (see `notes/README.md`).
 
 ### Step 5 — Shell setup (exactly what you will want in the CKA)
 
@@ -279,7 +348,7 @@ If the cluster is broken beyond repair:
 
 You will look at every one of these in `00-03`. And because the nodes are only containers sharing
 the host's kernel (`00-01`), the host can see inside them: `ps -ef | grep [k]ubelet` on the lab
-machine lists **three** kubelet processes.
+machine lists **three** kubelet processes. (On WSL with Docker Desktop you will see none: the engine, and therefore the node containers, run in Docker Desktop's own WSL distro, whose processes your Ubuntu distro cannot see. Use `docker top k8s-lab-worker` instead.)
 
 ---
 
@@ -305,6 +374,15 @@ machine lists **three** kubelet processes.
    before anything destructive. The scripts refuse to run against a context not named `kind-k8s-lab`.
 6. **Images built locally are not visible to the cluster.** Nodes have their own containerd. Use
    `kind load docker-image <img> --name k8s-lab` (used in Domain 1).
+7. **WSL: `failed to connect to the docker API at unix:///var/run/docker.sock … no such file or
+   directory`** → Docker Desktop is not running, or its WSL integration is off for Ubuntu (step 2b).
+8. **WSL: Pods still fail with `too many open files`** → raise the limits in Docker Desktop's own
+   distro, from PowerShell: `wsl -d docker-desktop sysctl -w fs.inotify.max_user_watches=524288
+   fs.inotify.max_user_instances=512`. This resets when WSL restarts; rerun it if the error returns.
+9. **WSL: after a Windows restart** the cluster comes back only once Docker Desktop has started. Start
+   Docker Desktop first, then give the nodes a minute.
+10. **WSL: slow or broken scripts** (`permission denied`, `\r: command not found`) → the clone is under
+   `/mnt/c`. Clone again into `~/k8s-course` (step 4).
 
 ---
 
@@ -318,7 +396,8 @@ kubectl get pods -A -o wide                 # everything running, in all namespa
 kubectl get namespaces --show-labels        # lab-00-02 has course=k8s
 
 # the nodes are processes on this machine
-ps -ef | grep [k]ubelet | wc -l             # 3
+ps -ef | grep [k]ubelet | wc -l             # 3 on native Ubuntu; 0 on WSL + Docker Desktop (see §6)
+docker top k8s-lab-worker | grep kubelet    # works on both: the kubelet inside one node container
 
 # get "onto" a node
 docker exec -it k8s-lab-worker bash
@@ -359,7 +438,7 @@ delete it (`kubectl delete pod broken`) — an image name in a Pod cannot be "re
 4. Is the kubelet a Pod? How did you check?
 5. Which kind feature lets `curl` on the lab machine reach a Service inside the cluster?
 6. You built `myapp:dev` with `docker build`. A Pod using it shows `ErrImagePull`. Why, and the fix?
-7. Why did `ps -ef | grep kubelet` on the lab machine show three kubelets?
+7. Why did `ps -ef | grep kubelet` on a native Ubuntu lab machine show three kubelets, and why does it show none on WSL with Docker Desktop?
 
 <details>
 <summary>Answers</summary>
@@ -370,7 +449,7 @@ delete it (`kubectl delete pod broken`) — an image name in a Pod cannot be "re
 4. **No.** It is a **systemd service** on the node (`systemctl status kubelet`). It *runs* Pods, including the static Pods of the control plane.
 5. **`extraPortMappings`** in the cluster config (host port → node container port), combined with a NodePort Service or an ingress controller listening on that node port.
 6. The image exists only in the host Docker's image store; each kind node has its **own containerd**, which tries to pull from Docker Hub. Fix: `kind load docker-image myapp:dev --name k8s-lab` and set `imagePullPolicy: IfNotPresent` (and do not use `:latest`, which forces `Always`).
-7. Each node is a container, and a container is just processes on the host kernel (`00-01`). The host's PID namespace sees every node's kubelet.
+7. Each node is a container, and a container is just processes on the host kernel (`00-01`). The host's PID namespace sees every node's kubelet. On WSL with Docker Desktop, the engine runs in a separate WSL distro with its own PID namespace, so your Ubuntu shell cannot see those processes; `docker top <node>` asks the engine instead.
 
 </details>
 

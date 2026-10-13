@@ -1,7 +1,7 @@
 # Kubernetes — master study plan (basics → advanced)
 
-*Written against Kubernetes **v1.36**. Target certification: **CKA**. Labs run in **bash on an Ubuntu
-lab machine** (`00-02`). Re-check version-specific facts against <https://kubernetes.io/docs> when
+*Written against Kubernetes **v1.36**. Target certification: **CKA**. Labs run in **bash**, on **native Ubuntu**
+or **WSL2 Ubuntu** (`00-02`). Re-check version-specific facts against <https://kubernetes.io/docs> when
 something looks off.*
 
 This is the **master document** for the course in this folder. It holds the goals, the complete
@@ -323,7 +323,7 @@ cannot be passed without it (25%).
   `kubectl delete namespace -l course=k8s`.
 - The cluster itself is disposable. If you break it beyond repair, `labs/cluster-down.sh` then
   `labs/cluster-up.sh` gives you a fresh one in about a minute. **Breaking it is allowed.**
-- Everything runs in **bash on the Ubuntu lab machine**, against **kind** (free, local) — Domains
+- Everything runs in **bash** (native Ubuntu or WSL2 Ubuntu), against **kind** (free, local) — Domains
   0–6, 8 and 9. Domain 7 needs **VMs** for kubeadm; how to provide them is decided when that domain
   is written.
 
