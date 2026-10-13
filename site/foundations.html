@@ -1,0 +1,679 @@
+<title>Kubernetes Foundations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* Layout: a field manual for one exam — left-aligned single column, mono "kubectl" labels as the
+   structural voice, condensed display heads, serif for the explanations. */
+:root {
+  --ground: #F4F5F8;
+  --surface: #FFFFFF;
+  --surface-2: #E9ECF3;
+  --ink: #161A24;
+  --ink-2: #4A5266;
+  --ink-3: #747C90;
+  --rule: #D9DDE7;
+  --rule-strong: #BFC5D3;
+  --accent: #2F55C4;
+  --accent-deep: #22409A;
+  --accent-soft: #E3E9F9;
+  --signal: #A25A00;
+  --signal-soft: #FAEEDC;
+  --ok: #1D7A4E;
+  --ok-soft: #E1F2E9;
+  --bad: #A8322A;
+  --bad-soft: #F9E6E4;
+  --shadow: 0 1px 2px rgba(22,26,36,.05), 0 10px 26px -14px rgba(22,26,36,.18);
+
+  --f-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --measure: 68ch;
+  --gutter: clamp(16px, 4vw, 40px);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0E1117;
+    --surface: #151A23;
+    --surface-2: #1C2230;
+    --ink: #E6E9F0;
+    --ink-2: #A3AABB;
+    --ink-3: #7A8296;
+    --rule: #262D3B;
+    --rule-strong: #353E50;
+    --accent: #7E9BF0;
+    --accent-deep: #A6BBF6;
+    --accent-soft: #1A2440;
+    --signal: #E3A44F;
+    --signal-soft: #2B2215;
+    --ok: #5CC495;
+    --ok-soft: #12291F;
+    --bad: #EE8E85;
+    --bad-soft: #2D1816;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 30px -16px rgba(0,0,0,.75);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0E1117;
+  --surface: #151A23;
+  --surface-2: #1C2230;
+  --ink: #E6E9F0;
+  --ink-2: #A3AABB;
+  --ink-3: #7A8296;
+  --rule: #262D3B;
+  --rule-strong: #353E50;
+  --accent: #7E9BF0;
+  --accent-deep: #A6BBF6;
+  --accent-soft: #1A2440;
+  --signal: #E3A44F;
+  --signal-soft: #2B2215;
+  --ok: #5CC495;
+  --ok-soft: #12291F;
+  --bad: #EE8E85;
+  --bad-soft: #2D1816;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 30px -16px rgba(0,0,0,.75);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--f-body);
+  padding-inline: var(--gutter);
+  padding-block: 0 64px;
+}
+.wrap { max-width: 1080px; margin-inline: auto; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { color: var(--accent-deep); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--f-mono); font-size: .86em; }
+code { background: var(--surface-2); padding: .08em .35em; border-radius: 4px; }
+
+/* ---------- header ---------- */
+header.top {
+  padding-block: 48px 36px;
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  gap: 18px;
+}
+.prompt {
+  font: 500 13px/1.4 var(--f-mono);
+  color: var(--ink-3);
+  letter-spacing: .02em;
+}
+.prompt b { color: var(--accent); font-weight: 600; }
+h1 {
+  font: 800 clamp(2.4rem, 7vw, 4.4rem)/0.95 var(--f-display);
+  font-stretch: 78%;
+  letter-spacing: -.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+h1 .sub {
+  display: block;
+  font: 500 clamp(1.05rem, 2.4vw, 1.35rem)/1.3 var(--f-body);
+  font-style: italic;
+  color: var(--ink-2);
+  margin-top: 14px;
+  letter-spacing: 0;
+}
+.facts { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.chip {
+  font: 500 12.5px/1 var(--f-mono);
+  padding: 7px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.chip b { color: var(--ink); font-weight: 600; }
+
+/* ---------- sections ---------- */
+section { padding-block: 44px 8px; }
+.eyebrow {
+  font: 600 12px/1 var(--f-mono);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--accent);
+  margin: 0 0 8px;
+}
+h2 {
+  font: 700 clamp(1.6rem, 3.6vw, 2.2rem)/1.1 var(--f-display);
+  font-stretch: 85%;
+  margin: 0 0 10px;
+  text-wrap: balance;
+}
+h3 {
+  font: 700 1.15rem/1.25 var(--f-display);
+  font-stretch: 90%;
+  margin: 0;
+}
+.lede { max-width: var(--measure); color: var(--ink-2); margin: 0 0 22px; }
+
+/* ---------- CKA bars ---------- */
+.bars { display: grid; gap: 14px; max-width: 900px; }
+.bar { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 3.2rem; gap: 14px; align-items: center; }
+.bar .lab { font: 600 15px/1.25 var(--f-display); font-stretch: 92%; }
+.bar .lab small { display: block; font: 400 12.5px/1.35 var(--f-mono); color: var(--ink-3); margin-top: 3px; }
+.track { height: 14px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.fill.top { background: var(--signal); }
+.pct { font: 600 15px/1 var(--f-mono); text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .bar { grid-template-columns: minmax(0, 1fr) 3rem; }
+  .bar .track { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* ---------- modules as kubectl output ---------- */
+.term {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.term-head {
+  font: 500 13px/1 var(--f-mono);
+  color: var(--ink-3);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.term-head b { color: var(--accent); }
+.mods { list-style: none; margin: 0; padding: 0; }
+.mod {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr) minmax(0, 15rem);
+  gap: 6px 18px;
+  padding: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.mod:last-child { border-bottom: 0; }
+.mod .id { font: 600 14px/1.4 var(--f-mono); color: var(--accent); }
+.mod h3 a { color: var(--ink); text-decoration: none; }
+.mod h3 a:hover { color: var(--accent); text-decoration: underline; }
+.mod p { margin: 4px 0 0; color: var(--ink-2); font-size: 15.5px; }
+.mod .fact { font-size: 14.5px; color: var(--ink); }
+.mod .side { display: grid; gap: 6px; align-content: start; }
+.tag {
+  font: 500 12px/1.35 var(--f-mono);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  justify-self: start;
+}
+.tag.break { background: var(--signal-soft); color: var(--signal); }
+@media (max-width: 720px) {
+  .mod { grid-template-columns: 3.4rem minmax(0, 1fr); }
+  .mod .side { grid-column: 2; }
+}
+
+/* ---------- component chain ---------- */
+.chain { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.chain .arrow { color: var(--ink-3); font: 500 14px/1 var(--f-mono); }
+.comp {
+  font: 600 13.5px/1 var(--f-mono);
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.comp:hover { border-color: var(--accent); }
+.comp[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.comp-detail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.comp-detail > div { padding: 16px 18px; border-left: 1px solid var(--rule); min-width: 0; }
+.comp-detail > div:first-child { border-left: 0; }
+.comp-detail .k { font: 600 11.5px/1 var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-bottom: 8px; }
+.comp-detail .down .k { color: var(--bad); }
+.comp-detail p { margin: 0; font-size: 15.5px; }
+.comp-detail .where p { font: 400 13.5px/1.55 var(--f-mono); }
+@media (max-width: 760px) {
+  .comp-detail { grid-template-columns: minmax(0, 1fr); }
+  .comp-detail > div { border-left: 0; border-top: 1px solid var(--rule); }
+  .comp-detail > div:first-child { border-top: 0; }
+}
+
+/* ---------- object catalogue ---------- */
+.tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.flt {
+  font: 500 12.5px/1 var(--f-mono);
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.flt[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.search {
+  font: 400 14px/1 var(--f-mono);
+  padding: 9px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  min-width: 0;
+  flex: 1 1 14rem;
+  max-width: 20rem;
+}
+.count { font: 500 12.5px/1 var(--f-mono); color: var(--ink-3); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
+.obj {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 14px 14px 12px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+.obj .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.obj .name { font: 700 1.02rem/1.2 var(--f-display); font-stretch: 90%; overflow-wrap: anywhere; }
+.stars { font: 600 12px/1 var(--f-mono); color: var(--signal); white-space: nowrap; letter-spacing: .05em; }
+.stars .off { color: var(--rule-strong); }
+.obj .gv, .mod .gv { font: 400 12px/1.3 var(--f-mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.obj .gv .scope { color: var(--accent); }
+.obj p { margin: 2px 0 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.obj .deep { font: 500 12px/1 var(--f-mono); color: var(--ink-3); margin-top: 2px; }
+.empty { padding: 20px; color: var(--ink-3); font: 400 14px/1.5 var(--f-mono); }
+
+/* ---------- tables ---------- */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 11.5px/1.2 var(--f-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); background: var(--surface-2); }
+td.num { font: 600 15px/1.3 var(--f-mono); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--accent); }
+td .wrong { color: var(--bad); }
+td .right { color: var(--ink); }
+td .mono { color: var(--ink-3); white-space: nowrap; }
+.beliefs td:first-child { width: 34%; }
+
+/* ---------- loop + commands ---------- */
+.loop { list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 10px; counter-reset: s; }
+.loop li { background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 14px; counter-increment: s; font-size: 15px; color: var(--ink-2); }
+.loop li::before { content: "step " counter(s); display: block; font: 600 11.5px/1 var(--f-mono); color: var(--accent); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; }
+.loop li b { color: var(--ink); font-family: var(--f-display); font-stretch: 92%; font-size: 1.02rem; display: block; margin-bottom: 2px; }
+.loop li.hot::before { color: var(--signal); }
+.cmds { display: grid; gap: 8px; }
+.cmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 8px 8px 14px; }
+.cmd .c { font: 500 13.5px/1.5 var(--f-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
+.cmd .c::before { content: "$ "; color: var(--ink-3); }
+.cmd .what { font: 400 13px/1.4 var(--f-body); color: var(--ink-3); grid-column: 1 / -1; margin-top: -4px; }
+.copy { font: 600 12px/1 var(--f-mono); padding: 8px 10px; border-radius: 5px; border: 1px solid var(--rule-strong); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
+.copy:hover { color: var(--accent); border-color: var(--accent); }
+
+pre.tree { font: 400 13.5px/1.6 var(--f-mono); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; overflow-x: auto; margin: 0; color: var(--ink-2); }
+pre.tree b { color: var(--ink); font-weight: 600; }
+pre.tree i { color: var(--accent); font-style: normal; }
+
+footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font: 400 13px/1.6 var(--f-mono); color: var(--ink-3); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .fill { transition: width .6s ease-out; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="prompt"><b>$</b> kubectl get course k8s -o wide</div>
+  <h1>Kubernetes Foundations<span class="sub">the model every CKA task assumes you already have</span></h1>
+  <div class="facts">
+    <span class="chip">target <b>CKA</b></span>
+    <span class="chip">kubernetes <b>v1.36</b></span>
+    <span class="chip">lab <b>kind · 3 nodes · Ubuntu</b></span>
+    <span class="chip">domain 0 <b>7 modules</b></span>
+    <span class="chip">checkpoint <b>20/25 + 4/5 tasks</b></span>
+  </div>
+</header>
+
+<section aria-labelledby="h-cka">
+  <p class="eyebrow">The target</p>
+  <h2 id="h-cka">The CKA, in proportion</h2>
+  <p class="lede">Two hours, roughly 15 to 20 hands-on tasks across several clusters, pass mark 66%. Troubleshooting alone is almost a third of the score, and it is the domain this foundation section prepares for most directly.</p>
+  <div class="bars" id="bars"></div>
+</section>
+
+<section aria-labelledby="h-mods">
+  <p class="eyebrow">Domain 0</p>
+  <h2 id="h-mods">The seven foundation modules</h2>
+  <p class="lede">Read in order. Every lab runs in its own namespace labelled <code>course=k8s</code> and contains a step where you break something on purpose.</p>
+  <div class="term">
+    <div class="term-head"><b>$</b> kubectl get modules -n 00-foundations</div>
+    <ol class="mods" id="mods"></ol>
+  </div>
+</section>
+
+<section aria-labelledby="h-chain">
+  <p class="eyebrow">00-03 · the chain of responsibility</p>
+  <h2 id="h-chain">Who does what when you apply</h2>
+  <p class="lede">Every component talks only to the API server. When one stops, the chain stops at its step and resumes by itself when it returns. Pick a component to see what you would observe if it were down, and where to look.</p>
+  <div class="chain" id="chain" role="group" aria-label="Control plane and node components"></div>
+  <div class="comp-detail" id="compDetail" aria-live="polite">
+    <div><div class="k">Its job</div><p id="cdJob"></p></div>
+    <div class="down"><div class="k">If it is down</div><p id="cdDown"></p></div>
+    <div class="where"><div class="k">Where to look</div><p id="cdWhere"></p></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-cat">
+  <p class="eyebrow">00-07 · the object catalogue</p>
+  <h2 id="h-cat">Every object, and how much the CKA cares</h2>
+  <p class="lede">Each card gives the group/version, whether it is namespaced or cluster-scoped, a one-line definition and the module that covers it in depth. Stars show CKA weight: ★★★ used constantly, ★★ appears regularly, ★ know what it is.</p>
+  <div class="tools">
+    <div class="filters" id="filters" role="group" aria-label="Filter by category"></div>
+    <label for="q" class="count" style="position:absolute;left:-9999px">Search objects</label>
+    <input id="q" class="search" type="search" placeholder="search: pvc, rbac, selector…" autocomplete="off">
+    <span class="count" id="count"></span>
+  </div>
+  <div class="grid" id="grid"></div>
+</section>
+
+<section aria-labelledby="h-beliefs">
+  <p class="eyebrow">Point-losers</p>
+  <h2 id="h-beliefs">Beliefs that cost marks</h2>
+  <p class="lede">Each one sounds reasonable and each one fails a task.</p>
+  <div class="tablewrap">
+    <table class="beliefs">
+      <thead><tr><th>Belief</th><th>Correction</th><th>Module</th></tr></thead>
+      <tbody id="beliefs"></tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-nums">
+  <p class="eyebrow">Memorise</p>
+  <h2 id="h-nums">The numbers</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Value</th><th>What it is</th></tr></thead>
+      <tbody id="nums"></tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-loop">
+  <p class="eyebrow">Method</p>
+  <h2 id="h-loop">How to study each module</h2>
+  <ol class="loop">
+    <li><b>Object model first</b>YAML only sticks once you know what each field is for.</li>
+    <li><b>YAML, then imperative</b>Rebuild it with <code>--dry-run=client -o yaml</code> and compare.</li>
+    <li><b>Watch it happen</b><code>kubectl get events -w</code> in a second terminal.</li>
+    <li class="hot"><b>Break it</b>Read the symptom before you read the cause.</li>
+    <li><b>Self-check closed-book</b>Retrieval, not recognition.</li>
+    <li><b>Clean up</b>Rebuilding next time is the practice.</li>
+  </ol>
+  <h3 style="margin-bottom:10px">The lab workflow, from the course root</h3>
+  <div class="cmds" id="cmds"></div>
+</section>
+
+<section aria-labelledby="h-repo">
+  <p class="eyebrow">Files</p>
+  <h2 id="h-repo">The repository</h2>
+  <pre class="tree"><b>kubernetes/</b>
+├── <b>k8s-study-plan.md</b>      <i># master plan: CKA mapping, schedule, roadmap</i>
+├── <b>README.md</b>              <i># navigation + progress tracker</i>
+├── <b>00-foundations/</b>        <i># 7 modules — complete</i>
+├── 01-workloads/ … 06-security/, 08-observability/
+├── 07-cluster-admin/       <i># deferred: kubeadm, upgrades, etcd (25% of the CKA)</i>
+├── 09-extending/, 10-production/   <i># optional, after the exam</i>
+├── <b>labs/</b>                  <i># kind-cluster.yaml, cluster-up/down, new-lab, clean-labs</i>
+├── <b>reference/</b>             <i># glossary, kubectl cheat sheet</i>
+├── <b>practice/</b>              <i># 00-foundations-exam.md: 25 questions + 5 tasks</i>
+└── site/                   <i># this page</i></pre>
+</section>
+
+<footer>Kubernetes course · Domain 0 · written against Kubernetes v1.36 · re-check exam weights at github.com/cncf/curriculum the week you book</footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+
+  /* ---- CKA bars ---- */
+  var cka = [
+    ["Troubleshooting", 30, "00-03 · Domain 8 · every break-it step"],
+    ["Cluster architecture, installation & configuration", 25, "00-03 · 06-01–03 · Domain 7 · Helm, Kustomize"],
+    ["Services & networking", 20, "Domain 3"],
+    ["Workloads & scheduling", 15, "Domains 1, 2, 5"],
+    ["Storage", 10, "Domain 4"]
+  ];
+  var bars = document.getElementById("bars");
+  cka.forEach(function (d, i) {
+    var b = el("div", "bar");
+    b.appendChild(el("div", "lab", d[0] + "<small>" + d[2] + "</small>"));
+    var t = el("div", "track"); t.setAttribute("role", "img"); t.setAttribute("aria-label", d[0] + ": " + d[1] + " percent");
+    var f = el("div", "fill" + (i === 0 ? " top" : "")); f.style.width = (d[1] / 30 * 100) + "%";
+    t.appendChild(f); b.appendChild(t);
+    b.appendChild(el("div", "pct", d[1] + "%"));
+    bars.appendChild(b);
+  });
+
+  /* ---- modules ---- */
+  var mods = [
+    ["00-01", "Containers, and why orchestration exists", "00-01-containers-and-why-orchestration.md", "Namespaces, cgroups, images and digests, the CRI runtime stack.", "A container is a process. CPU limits throttle; memory limits kill (exit 137).", "~75 min", "Break it: OOM-kill a container"],
+    ["00-02", "Lab environment", "00-02-lab-environment-kind.md", "Ubuntu, Docker Engine, kubectl, kind, and a bash and vim setup that matches the exam.", "Each kind node is a container: docker exec is your ssh.", "~60 min", "Break it: ImagePullBackOff"],
+    ["00-03", "Cluster architecture", "00-03-cluster-architecture.md", "Every component, static Pods, and what happens on kubectl apply.", "Only the API server talks to etcd. The scheduler only sets nodeName.", "~2 h", "Break it: kill the scheduler and controller manager"],
+    ["00-04", "The API and the object model", "00-04-api-and-object-model.md", "Groups and versions, spec vs status, labels, owners, finalizers, YAML traps.", "spec is desired, status is observed. Garbage collection follows ownerReferences.", "~90 min", "Break it: 409 conflict, stuck Terminating"],
+    ["00-05", "kubectl fluency", "00-05-kubectl-fluency.md", "kubeconfig, output formats, generating YAML, apply vs create vs replace, patch types.", "--dry-run=client -o yaml is the most valuable exam habit.", "~90 min", "12 timed drills"],
+    ["00-06", "Your first application, end to end", "00-06-first-app-end-to-end.md", "Pod → Deployment → Service → scale → rollout → rollback → debug.", "Services select Pods by label; only Ready Pods get traffic.", "~2 h", "Break it: bad release, empty Service, crash loop"],
+    ["00-07", "The object catalogue", "00-07-object-catalogue.md", "Every built-in kind: what it is, contains, connects to, and who acts on it.", "Selection failures are silent; reference failures are loud.", "~2 h", "Lab: dissect CoreDNS"]
+  ];
+  var base = "00-foundations/";
+  var ol = document.getElementById("mods");
+  mods.forEach(function (m) {
+    var li = el("li", "mod");
+    li.appendChild(el("div", "id", m[0]));
+    var mid = el("div", "");
+    mid.style.minWidth = "0";
+    mid.appendChild(el("h3", "", m[1]));
+    mid.appendChild(el("div", "gv", base + m[2]));
+    mid.appendChild(el("p", "", m[3]));
+    mid.appendChild(el("p", "fact", m[4]));
+    li.appendChild(mid);
+    var side = el("div", "side");
+    side.appendChild(el("span", "tag", m[5]));
+    side.appendChild(el("span", "tag break", m[6]));
+    li.appendChild(side);
+    ol.appendChild(li);
+  });
+
+  /* ---- component chain ---- */
+  var comps = [
+    ["kubectl", "A client. Sends authenticated HTTPS requests to the API server and returns as soon as the object is stored, not when it is running.", "Nothing in the cluster is affected. If kubectl cannot connect, suspect the kubeconfig context first, then the API server.", "kubectl config current-context\nkubectl cluster-info\n~/.kube/config"],
+    ["kube-apiserver", "The only door. Authenticates, authorises, runs admission, validates, then stores in etcd. Serves watches to every other component.", "kubectl reports connection refused or times out. Running containers keep running, but nothing can be changed or rescheduled.", "On the control-plane node:\ncrictl ps -a --name kube-apiserver\ncrictl logs <id>\n/etc/kubernetes/manifests/kube-apiserver.yaml"],
+    ["etcd", "The only state. A Raft key-value store; a write commits when a majority of members agree.", "The API server fails its health checks and requests error out. Lose etcd without a backup and the cluster's entire state is gone.", "crictl logs <etcd-id>\n/etc/kubernetes/manifests/etcd.yaml\netcdctl endpoint health (with the TLS flags)"],
+    ["controller-manager", "Runs the reconcile loops: Deployment → ReplicaSet → Pods, Node lifecycle, Jobs, EndpointSlices, garbage collection.", "A new Deployment shows READY 0/N with no ReplicaSet. Scaling and deleted Pods are not acted on.", "kubectl -n kube-system get pods -l component=kube-controller-manager\nkubectl -n kube-system logs -l component=kube-controller-manager\n/etc/kubernetes/manifests/"],
+    ["scheduler", "Filters and scores nodes for Pods with an empty nodeName, then writes the binding. It never starts anything.", "New Pods stay Pending with Events: <none>. A running scheduler that cannot place a Pod would emit FailedScheduling instead.", "kubectl describe pod <p>   (no events?)\nkubectl -n kube-system logs -l component=kube-scheduler\n/etc/kubernetes/manifests/kube-scheduler.yaml"],
+    ["kubelet", "A systemd service on every node. Runs the Pods bound to its node through CRI, runs probes, reports status, renews the node Lease.", "The node goes NotReady after about 40–50 s; its Pods are evicted after 300 s and only controller-owned Pods are recreated elsewhere.", "systemctl status kubelet\njournalctl -u kubelet --no-pager | tail -50\n/var/lib/kubelet/config.yaml"],
+    ["runtime + CNI", "containerd (via CRI) pulls images and starts containers; the CNI plugin gives each Pod its IP and routes.", "Pods sit in ContainerCreating with sandbox or network errors in their events; images fail to pull.", "kubectl describe pod <p>   (Events)\ncrictl ps -a ; crictl pods\nsystemctl status containerd"],
+    ["kube-proxy", "A DaemonSet that programs iptables/nftables so traffic to a Service IP is rewritten to a Ready Pod IP.", "DNS resolves and Pods are healthy, but connections to the Service IP hang or are refused.", "kubectl -n kube-system get ds kube-proxy\nkubectl get endpointslices -l kubernetes.io/service-name=<svc>\niptables-save | grep <svc>"],
+    ["CoreDNS", "The cluster DNS server, behind the kube-dns Service. Answers <svc>.<ns>.svc.cluster.local with the ClusterIP.", "Name lookups fail inside Pods while connections to IPs still work.", "kubectl -n kube-system get pods -l k8s-app=kube-dns\nkubectl run t --rm -it --image=busybox:1.37 --restart=Never -- nslookup kubernetes"]
+  ];
+  var chain = document.getElementById("chain");
+  var btns = [];
+  function show(i) {
+    btns.forEach(function (b, j) { b.setAttribute("aria-pressed", String(i === j)); });
+    document.getElementById("cdJob").textContent = comps[i][1];
+    document.getElementById("cdDown").textContent = comps[i][2];
+    var w = document.getElementById("cdWhere");
+    w.textContent = "";
+    comps[i][3].split("\n").forEach(function (line, k) { if (k) w.appendChild(document.createElement("br")); w.appendChild(document.createTextNode(line)); });
+  }
+  comps.forEach(function (c, i) {
+    if (i) chain.appendChild(el("span", "arrow", "→"));
+    var b = el("button", "comp"); b.type = "button"; b.textContent = c[0];
+    b.addEventListener("click", function () { show(i); });
+    btns.push(b); chain.appendChild(b);
+  });
+  show(4);
+
+  /* ---- object catalogue ---- */
+  var C = { w: "Workloads", n: "Networking", c: "Config", s: "Storage", a: "Access", p: "Policy", k: "Cluster" };
+  var objs = [
+    ["Pod","v1","N","w",3,"One or more containers sharing an IP and volumes, scheduled together on one node. The only object that runs anything.","01-01"],
+    ["ReplicaSet","apps/v1","N","w",1,"Keeps N identical Pods running. Created by a Deployment, rarely by hand.","01-03"],
+    ["Deployment","apps/v1","N","w",3,"Rolling updates and rollback for stateless Pods, through one ReplicaSet per template version.","01-04"],
+    ["StatefulSet","apps/v1","N","w",2,"Stable Pod names and DNS, ordered rollout, and one PVC per Pod via volumeClaimTemplates.","01-06"],
+    ["DaemonSet","apps/v1","N","w",2,"One Pod on every matching node: log agents, CNI, kube-proxy.","01-05"],
+    ["Job","batch/v1","N","w",2,"Runs Pods to completion with retries, parallelism and deadlines.","01-07"],
+    ["CronJob","batch/v1","N","w",2,"Creates Jobs on a cron schedule, with a concurrency policy and history limits.","01-07"],
+    ["HorizontalPodAutoscaler","autoscaling/v2","N","w",2,"Adjusts replicas from metrics measured against requests. Needs metrics-server.","05-06"],
+    ["Service","v1","N","n",3,"A stable virtual IP and DNS name in front of the Ready Pods that match its selector.","03-02"],
+    ["EndpointSlice","discovery.k8s.io/v1","N","n",2,"The Ready Pod IPs behind a Service. The first thing to check when a Service does not answer.","03-02"],
+    ["Ingress","networking.k8s.io/v1","N","n",2,"Host and path HTTP routing to Services. Does nothing without an ingress controller.","03-05"],
+    ["IngressClass","networking.k8s.io/v1","C","n",1,"Names an ingress controller implementation; one can be the default.","03-05"],
+    ["NetworkPolicy","networking.k8s.io/v1","N","n",3,"A firewall for selected Pods, ingress and egress. Ignored unless the CNI enforces it.","03-07"],
+    ["GatewayClass","gateway.networking.k8s.io/v1","C","n",1,"Which Gateway API implementation to use. Installed as a CRD.","03-06"],
+    ["Gateway","gateway.networking.k8s.io/v1","N","n",2,"Listeners: ports, hostnames and TLS, owned by the cluster operator.","03-06"],
+    ["HTTPRoute","gateway.networking.k8s.io/v1","N","n",2,"Routes from a Gateway to Services, including weighted traffic splits.","03-06"],
+    ["ConfigMap","v1","N","c",3,"Non-secret key/value configuration, consumed as env vars or mounted files. 1 MiB maximum.","02-01"],
+    ["Secret","v1","N","c",3,"Like a ConfigMap for sensitive values. Base64-encoded, not encrypted, unless encryption at rest is set up.","02-02"],
+    ["PersistentVolumeClaim","v1","N","s",3,"An application's request for storage: size, access mode, StorageClass.","04-02"],
+    ["PersistentVolume","v1","C","s",3,"A real piece of storage. Binds 1:1 to a PVC; the reclaim policy decides what happens after.","04-02"],
+    ["StorageClass","storage.k8s.io/v1","C","s",3,"A template for dynamic provisioning: provisioner, parameters, binding mode, expansion.","04-03"],
+    ["VolumeAttachment","storage.k8s.io/v1","C","s",1,"Records which CSI volume is attached to which node. Read it when attach fails.","04-04"],
+    ["CSIDriver","storage.k8s.io/v1","C","s",1,"Declares an installed CSI storage driver and its capabilities.","04-04"],
+    ["VolumeSnapshot","snapshot.storage.k8s.io/v1","N","s",1,"A point-in-time copy of a PVC. CRD from the external-snapshotter.","04-04"],
+    ["ServiceAccount","v1","N","a",3,"An identity for Pods calling the API. Every namespace gets a default one.","06-03"],
+    ["Role","rbac.authorization.k8s.io/v1","N","a",3,"Allowed verbs on resources within one namespace. Additive only; there is no deny.","06-02"],
+    ["ClusterRole","rbac.authorization.k8s.io/v1","C","a",3,"Like a Role, but can cover cluster-scoped resources and every namespace.","06-02"],
+    ["RoleBinding","rbac.authorization.k8s.io/v1","N","a",3,"Grants a Role or ClusterRole to users, groups or ServiceAccounts, in its own namespace only.","06-02"],
+    ["ClusterRoleBinding","rbac.authorization.k8s.io/v1","C","a",3,"Grants a ClusterRole cluster-wide. Its roleRef is immutable.","06-02"],
+    ["CertificateSigningRequest","certificates.k8s.io/v1","C","a",2,"Asks the cluster CA to sign a certificate. This is how you create a user.","06-01"],
+    ["Namespace","v1","C","p",3,"A scope for names. Becomes an isolation boundary only with RBAC, policies and quotas.","00-04"],
+    ["ResourceQuota","v1","N","p",2,"Caps a namespace's total requests, limits and object counts.","05-05"],
+    ["LimitRange","v1","N","p",2,"Default and min/max requests and limits per container in a namespace.","05-05"],
+    ["PriorityClass","scheduling.k8s.io/v1","C","p",2,"A named priority. Higher-priority Pods schedule first and may preempt others.","05-04"],
+    ["PodDisruptionBudget","policy/v1","N","p",2,"Keeps enough Pods up during drains. Honoured by eviction, not by delete.","05-07"],
+    ["RuntimeClass","node.k8s.io/v1","C","p",1,"Selects a runtime handler, for example a gVisor sandbox.","06-09"],
+    ["ValidatingAdmissionPolicy","admissionregistration.k8s.io/v1","C","p",1,"Admission rules written in CEL, with no webhook to run.","06-06"],
+    ["ValidatingWebhookConfiguration","admissionregistration.k8s.io/v1","C","p",1,"Registers an external admission webhook. A broken one blocks requests.","06-06"],
+    ["Node","v1","C","k",3,"A machine registered by its kubelet: capacity, conditions, taints, cordon.","07-05"],
+    ["Event","v1","N","k",3,"A record of what happened to an object. Your first debugging source; kept about an hour.","08-01"],
+    ["Lease","coordination.k8s.io/v1","N","k",1,"Node heartbeats and leader election for the scheduler and controller manager.","00-03"],
+    ["CustomResourceDefinition","apiextensions.k8s.io/v1","C","k",2,"Adds a new kind to the API. CRD plus controller makes an operator.","09-01"],
+    ["APIService","apiregistration.k8s.io/v1","C","k",1,"Registers an API version, local or aggregated (e.g. metrics.k8s.io).","09-05"]
+  ];
+  var cur = "all", grid = document.getElementById("grid"), q = document.getElementById("q"), count = document.getElementById("count");
+  var filters = document.getElementById("filters"), fbtns = {};
+  ["all"].concat(Object.keys(C)).forEach(function (k) {
+    var b = el("button", "flt"); b.type = "button"; b.textContent = k === "all" ? "All" : C[k];
+    b.setAttribute("aria-pressed", String(k === cur));
+    b.addEventListener("click", function () { cur = k; Object.keys(fbtns).forEach(function (x) { fbtns[x].setAttribute("aria-pressed", String(x === k)); }); render(); });
+    fbtns[k] = b; filters.appendChild(b);
+  });
+  function stars(n) { var s = ""; for (var i = 0; i < 3; i++) s += i < n ? "★" : '<span class="off">★</span>'; return s; }
+  function render() {
+    var term = q.value.trim().toLowerCase(), shown = 0;
+    grid.textContent = "";
+    objs.forEach(function (o) {
+      if (cur !== "all" && o[3] !== cur) return;
+      var hay = (o[0] + " " + o[1] + " " + o[5] + " " + C[o[3]]).toLowerCase();
+      if (term && hay.indexOf(term) < 0) return;
+      shown++;
+      var c = el("article", "obj");
+      var r = el("div", "row");
+      r.appendChild(el("span", "name", o[0]));
+      var st = el("span", "stars", stars(o[4])); st.setAttribute("aria-label", "CKA weight " + o[4] + " of 3");
+      r.appendChild(st);
+      c.appendChild(r);
+      c.appendChild(el("div", "gv", o[1] + ' · <span class="scope">' + (o[2] === "N" ? "namespaced" : "cluster-scoped") + "</span>"));
+      c.appendChild(el("p", "", o[5]));
+      c.appendChild(el("div", "deep", "deep dive → " + o[6]));
+      grid.appendChild(c);
+    });
+    if (!shown) grid.appendChild(el("div", "empty", "No object matches. Try a kind name (pvc), a group (rbac) or a word (selector)."));
+    count.textContent = shown + " of " + objs.length;
+  }
+  q.addEventListener("input", render);
+  render();
+
+  /* ---- beliefs ---- */
+  var beliefs = [
+    ["A container is a lightweight VM", "It is a Linux process with namespaces and cgroups applied, on the host's kernel.", "00-01"],
+    ["Kubernetes removed Docker, so Docker images stopped working", "Only dockershim was removed (v1.24). Images are OCI and run on containerd or CRI-O unchanged.", "00-01"],
+    ["The scheduler starts the Pod", "It only writes spec.nodeName. The kubelet on that node starts the containers.", "00-03"],
+    ["kubectl delete pod removes a static Pod", "The mirror comes straight back. Remove the file from /etc/kubernetes/manifests/.", "00-03"],
+    ["Deleting a Deployment's Pod reduces the Pod count", "The ReplicaSet replaces it. Scale or delete the owner.", "00-06"],
+    ["kubectl apply succeeded, so the app is running", "Created means stored in etcd. Check rollout status.", "00-03"],
+    ["A namespace is a security boundary", "Only a name scope until RBAC, NetworkPolicy, quotas and Pod Security are added.", "00-04"],
+    ["A Service routes to a Deployment", "It routes to Ready Pods whose labels match its selector. A wrong selector fails silently.", "00-06"],
+    ["A stalled rollout rolls itself back", "It stays stalled. Run kubectl rollout undo, then fix the source of truth.", "00-06"],
+    ["Etcd with 4 members is safer than 3", "Both tolerate exactly one failure. Use odd sizes.", "00-03"]
+  ];
+  var tb = document.getElementById("beliefs");
+  beliefs.forEach(function (b) {
+    var tr = document.createElement("tr");
+    tr.appendChild(el("td", "", '<span class="wrong"></span>')).firstChild.textContent = b[0];
+    tr.appendChild(el("td", "", '<span class="right"></span>')).firstChild.textContent = b[1];
+    tr.appendChild(el("td", "", '<span class="mono"></span>')).firstChild.textContent = b[2];
+    tb.appendChild(tr);
+  });
+
+  /* ---- numbers ---- */
+  var nums = [
+    ["6443", "kube-apiserver port"], ["2379 / 2380", "etcd client / peer ports"], ["10250", "kubelet API port"],
+    ["30000–32767", "default NodePort range"], ["30 s", "default termination grace period (SIGTERM → SIGKILL)"],
+    ["300 s", "default toleration of not-ready/unreachable taints before eviction"], ["137 / 143", "exit codes for SIGKILL (often OOM) / SIGTERM"],
+    ["25% / 25%", "default maxSurge / maxUnavailable"], ["10", "default revisionHistoryLimit"], ["600 s", "default progressDeadlineSeconds"],
+    ["5 min", "maximum CrashLoopBackOff delay"], ["⌊n/2⌋+1", "etcd quorum: 3 members tolerate 1 failure, 5 tolerate 2"],
+    ["±1 minor", "supported kubectl ↔ API server version skew"], ["/etc/kubernetes/manifests", "default static Pod path on kubeadm (and kind) nodes"]
+  ];
+  var nb = document.getElementById("nums");
+  nums.forEach(function (n) {
+    var tr = document.createElement("tr");
+    tr.appendChild(el("td", "num")).textContent = n[0];
+    tr.appendChild(el("td", "")).textContent = n[1];
+    nb.appendChild(tr);
+  });
+
+  /* ---- commands ---- */
+  var cmds = [
+    ["./labs/cluster-up.sh", "Create the 3-node kind cluster and switch to its context."],
+    ["./labs/new-lab.sh lab-00-03", "Create a lab namespace labelled course=k8s and make it the default."],
+    ["./labs/clean-labs.sh", "Delete every course=k8s namespace and labelled cluster-scoped object."],
+    ["./labs/cluster-down.sh && ./labs/cluster-up.sh", "Replace a cluster broken beyond repair, in about a minute."],
+    ["kubectl create deployment web --image=nginx:1.27 $do > web.yaml", "Generate YAML instead of writing it ($do is --dry-run=client -o yaml)."]
+  ];
+  var box = document.getElementById("cmds");
+  cmds.forEach(function (c) {
+    var row = el("div", "cmd");
+    var code = el("div", "c"); code.textContent = c[0];
+    var btn = el("button", "copy", "copy"); btn.type = "button";
+    btn.addEventListener("click", function () {
+      function done(t) { btn.textContent = t; setTimeout(function () { btn.textContent = "copy"; }, 1400); }
+      function fallback() { var r = document.createRange(); r.selectNodeContents(code); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); done("selected"); }
+      try { navigator.clipboard.writeText(c[0]).then(function () { done("copied"); }, fallback); } catch (e) { fallback(); }
+    });
+    row.appendChild(code); row.appendChild(btn);
+    row.appendChild(el("div", "what", c[1]));
+    box.appendChild(row);
+  });
+})();
+</script>

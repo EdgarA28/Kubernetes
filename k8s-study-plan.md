@@ -371,7 +371,7 @@ cannot be passed without it (25%).
 - ✅ **`reference/glossary.md`** and **`reference/kubectl-cheatsheet.md`**
 - ✅ **`practice/00-foundations-exam.md`** — 25 questions + 5 hands-on tasks with worked answers
 - ✅ **Domain 1–10 READMEs** — planned module lists and per-domain point-losers
-- ✅ **Published page:** Kubernetes Foundations (link in `README.md`)
+- ✅ **Published page:** [Kubernetes Foundations](https://claude.ai/artifact/Rx7WqRDiWXvyH6VeWzYkBC) — source in `site/foundations.html`
 
 ### Next, in order (CKA-first)
 
