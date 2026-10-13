@@ -65,8 +65,27 @@ containers start in milliseconds, and also why a container is a weaker isolation
 
 ### 3.2 cgroups — limits on *use*
 
-cgroups enforce resource limits. Modern systems (including Ubuntu 22.04+ and every
-current Kubernetes node) use **cgroup v2**.
+**cgroups** (control groups) are a Linux kernel feature that **limits and measures** how much of
+the machine's resources a group of processes can use: CPU, memory, number of processes, disk I/O.
+Namespaces decide what a process can *see*; cgroups decide what it can *use*. Modern systems
+(including Ubuntu 22.04+ and every current Kubernetes node) use **cgroup v2**.
+
+**How they work.** The kernel organises processes into a tree of groups under `/sys/fs/cgroup/`.
+Each group is a directory of small files holding its limits and its current usage; the kernel
+enforces the limits for every process in the group.
+
+```
+/sys/fs/cgroup/<some group>/
+├── memory.max      → 67108864        64 MiB limit
+├── memory.current  → 23412736        what the group uses right now
+├── cpu.max         → 50000 100000    50 ms of CPU per 100 ms period = half a core
+├── cpu.weight      → 100             relative share when CPUs are contended
+├── cpu.stat        → … nr_throttled, throttled_usec   how often and how long it was throttled
+└── pids.max        → max number of processes (fork-bomb protection)
+```
+
+`docker run --memory 64m --cpus 0.5` does nothing more than write those files. You read them
+yourself in lab step 9.3.
 
 The two limits that matter most, and that behave **completely differently**:
 
@@ -75,9 +94,29 @@ The two limits that matter most, and that behave **completely differently**:
 | **Memory** | The kernel's OOM killer **kills** the process (`SIGKILL`) | Exit code **137**; in Kubernetes, `OOMKilled` |
 | **CPU** | The process is **throttled** — it waits for its next time slice | Slow, high latency; *no* error, *no* restart |
 
-Memory is **incompressible** (you cannot give memory back slowly), CPU is **compressible** (you
-can just run slower). Memorise this pair — it is the basis of Kubernetes requests, limits and QoS
-in `01-09`.
+Memory is **incompressible** (you cannot take memory back gradually, so the only enforcement is a
+kill), CPU is **compressible** (time can simply be handed out more slowly). Memorise this pair —
+it is the basis of Kubernetes requests, limits and QoS in `01-09`. Lab step 9.4 triggers an OOM
+kill on purpose.
+
+**Why cgroups matter in Kubernetes:**
+
+| Kubernetes setting | What it becomes in the cgroup |
+|---|---|
+| `resources.limits.memory` | `memory.max` — exceed it and the container is OOMKilled |
+| `resources.limits.cpu` | `cpu.max` — exceed it and the container is throttled |
+| `resources.requests.cpu` | `cpu.weight` — its share of CPU when the node is busy |
+| `resources.requests` (CPU and memory) | Not a cgroup limit for memory: the **scheduler** uses requests to decide which node has room (`00-03`, Domain 5) |
+
+- Every Pod gets its own cgroup, with one child cgroup per container; the kubelet creates them
+  through the container runtime.
+- The kubelet and the runtime must use the **same cgroup driver**. On systemd-based nodes that
+  means `cgroupDriver: systemd` in the kubelet config and `SystemdCgroup = true` in containerd's
+  `config.toml`. A mismatch is a classic broken-node fault (containerd card, `00-03` §3.10).
+
+> **CKA symptom pair:** *"the app is slow but never restarts"* → a CPU limit is throttling it
+> (`cpu.stat` shows `nr_throttled` climbing). *"It keeps restarting with exit code 137"* → the
+> memory limit and `OOMKilled`.
 
 ### 3.3 Images — the package
 
@@ -358,6 +397,16 @@ docker run --rm --cpus 0.5   alpine:3.20 cat /sys/fs/cgroup/cpu.max
 ✅ **Verify:** `memory.max` is `67108864` (64 × 1024 × 1024). `cpu.max` is `50000 100000` — 50 ms
 of CPU per 100 ms period = half a core. Kubernetes writes these same files from `resources.limits`.
 
+Now watch a CPU limit throttle instead of kill. The container spins a busy loop for 3 seconds on a
+fifth of a core, then prints its own throttling counters:
+
+```bash
+docker run --rm --cpus 0.2 alpine:3.20 sh -c 'timeout 3 sh -c "while :; do :; done"; grep throttled /sys/fs/cgroup/cpu.stat'
+```
+
+✅ **Verify:** `nr_throttled` is well above zero and `throttled_usec` is close to 2.4 s (80% of the
+3 s), yet the container exited normally. This is the "slow but never restarts" symptom.
+
 ### 9.4 Break it: an OOM kill
 
 ```bash
@@ -424,6 +473,8 @@ docker container prune -f
 8. Every `kubectl delete pod` in a team takes 30 seconds. What is the most likely cause in the image, and two fixes?
 9. Why is `nginx:latest` a bad choice in a production manifest — two reasons?
 10. Two containers in the same Pod both try to listen on port 8080. What happens and why?
+11. Where on a Linux node do cgroup limits live, and which file does `resources.limits.memory` become? Which one does `resources.limits.cpu` become?
+12. Why must the kubelet and containerd agree on the cgroup driver, and where is each one set?
 
 <details>
 <summary>Answers</summary>
@@ -438,6 +489,8 @@ docker container prune -f
 8. PID 1 does not handle **SIGTERM** — typically a **shell-form** CMD/ENTRYPOINT, so `/bin/sh` is PID 1. Fixes: use **exec form**, `exec` the app at the end of an entrypoint script, or an init such as **tini** (or handle SIGTERM in the app). Lowering `terminationGracePeriodSeconds` hides the symptom but loses graceful shutdown.
 9. It is **mutable** (you cannot tell which version is running, and nodes may run different ones), and it forces **`imagePullPolicy: Always`**, coupling every Pod start to registry availability. Pin a version tag or digest.
 10. The second fails to bind (`address already in use`) and crashes. Containers in a Pod **share the network namespace** — one set of ports.
+11. Under `/sys/fs/cgroup/` (cgroup v2), one directory per group. `limits.memory` → **`memory.max`**; `limits.cpu` → **`cpu.max`** (quota per period). CPU requests become `cpu.weight`.
+12. Both create and manage the same Pod cgroups; with different drivers (`systemd` vs `cgroupfs`) they build conflicting cgroup trees and the node misbehaves or goes NotReady. Kubelet: `cgroupDriver` in `/var/lib/kubelet/config.yaml`. containerd: `SystemdCgroup = true` in `/etc/containerd/config.toml`.
 
 </details>
 
