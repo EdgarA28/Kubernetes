@@ -1,7 +1,7 @@
 # 00-01 — Containers, and why orchestration exists
 
 > **Module type:** Foundation
-> **Time:** ~75 minutes (45 reading, 30 lab)
+> **Time:** ~2 hours (60 reading, 60 lab)
 > **Prerequisites:** basic Linux shell; the Ubuntu lab machine with Docker Engine (`00-02` step 2)
 > **Maps to:** CKA/CKAD assume all of it silently — exit codes, image references, the runtime stack and resource limits all reappear in troubleshooting questions
 
@@ -264,6 +264,122 @@ ENTRYPOINT ["/app"]                       # exec form → /app is PID 1 and rece
 CMD ["--port=8080"]                       # default arguments
 ```
 
+The last two lines decide what process runs, how it can be overridden, and whether it shuts down
+cleanly. They are worth understanding completely.
+
+### 4.1 What ENTRYPOINT and CMD are
+
+Neither line runs anything at build time. Each writes a field into the image's **config**
+(`Entrypoint` and `Cmd`), and the runtime reads those fields when it creates a container.
+
+- **`ENTRYPOINT ["/app"]`** — the **executable**: the program this image *is*.
+- **`CMD ["--port=8080"]`** — the **default arguments**: the part callers are expected to change.
+  When an ENTRYPOINT exists, CMD is not a command of its own; it is appended to the ENTRYPOINT.
+
+The runtime concatenates them into the new process's argument list (`argv`):
+
+```
+argv = ENTRYPOINT + CMD = ["/app", "--port=8080"]      ≡   /app --port=8080
+```
+
+Inside the program, `argv[0]` is `/app` and `argv[1]` is `--port=8080`. Check the stored fields on
+any image with:
+
+```bash
+docker image inspect <image> --format 'Entrypoint={{json .Config.Entrypoint}} Cmd={{json .Config.Cmd}}'
+```
+
+### 4.2 Why split it in two: a fixed part and an overridable part
+
+The split encodes intent: *this image is the `/app` program* (hard to change) and *by default, run
+it on port 8080* (easy to change).
+
+| You run | What runs | Why |
+|---|---|---|
+| `docker run img` | `/app --port=8080` | Both defaults |
+| `docker run img --port=9090` | `/app --port=9090` | Everything after the image name **replaces CMD** |
+| `docker run img --debug` | `/app --debug` | **All** of CMD is replaced — `--port=8080` is gone too |
+| `docker run --entrypoint /bin/sh img` | `/bin/sh` | `--entrypoint` replaces ENTRYPOINT **and clears CMD** |
+
+The last row surprises people: overriding the program discards the image's default arguments,
+because they belonged to the old program.
+
+### 4.3 Exec form vs shell form — the brackets matter
+
+Both instructions have two syntaxes.
+
+**Exec form** (a JSON array), as used here: `ENTRYPOINT ["/app"]`. The runtime calls the kernel's
+`execve("/app", ["/app", "--port=8080"], env)` directly. No shell is involved; `/app` itself
+becomes the container's first process.
+
+**Shell form** (a plain string): `ENTRYPOINT /app --port=8080`. Docker silently rewrites it to
+`["/bin/sh", "-c", "/app --port=8080"]`, so a **shell** is started first and runs your command.
+
+| | Exec form `["/app"]` | Shell form `/app` |
+|---|---|---|
+| First process (PID 1) | `/app` | `/bin/sh` (usually — see the note below) |
+| Receives SIGTERM directly | Yes | No — the shell receives it and does not forward it |
+| `$VAR` expansion, pipes, `&&`, `\|\|` | No (no shell to do them) | Yes |
+| Needs a shell in the image | No — works in distroless and `scratch` images | Yes — fails if there is no `/bin/sh` |
+| CMD appended as arguments | Yes | **No — a shell-form ENTRYPOINT ignores CMD and `docker run` arguments** |
+
+Two syntax traps:
+
+- The exec form must be **valid JSON**, so it needs **double quotes**. `ENTRYPOINT ['/app']` is not
+  valid JSON, and Docker quietly treats it as shell form.
+- `CMD ["--port=$PORT"]` passes the literal text `$PORT`, because no shell exists to expand it.
+
+> Note: for a single simple command, some shells replace themselves with it (`sh -c "/app"` may
+> end with `/app` as PID 1). Do not rely on it — as soon as the string contains `;`, `&&`, `||` or
+> a pipe, the shell has to stay alive to finish the job, and it stays PID 1.
+
+### 4.4 Why "PID 1 receives SIGTERM" matters
+
+Inside the container's PID namespace (§3.1) the first process is **PID 1**. When a container is
+stopped — `docker stop`, or deleting a Pod — the runtime sends **SIGTERM to PID 1 only**, waits a
+grace period (10 s in Docker, `terminationGracePeriodSeconds` = 30 s in Kubernetes), then sends
+**SIGKILL** (§3.5).
+
+PID 1 is special to the kernel in two ways:
+
+1. **No default signal behaviour.** An ordinary process dies on SIGTERM by default. PID 1 ignores
+   every signal it has not installed a handler for, so the program must handle SIGTERM explicitly
+   (Go: `signal.Notify`; Node: `process.on('SIGTERM', …)`; Python: `signal.signal(…)`).
+2. **It must reap zombies.** Processes whose parent died are adopted by PID 1, which must collect
+   their exit status. A PID 1 that never does accumulates zombie processes.
+
+```
+exec form                                   shell form
+PID 1  /app   ← SIGTERM arrives here        PID 1  /bin/sh -c "…"   ← SIGTERM arrives here, not forwarded
+       closes connections, exits 0/143        └─ PID 7  /app        ← never told to stop
+                                            … grace period expires → SIGKILL → exit 137, requests cut off
+```
+
+In Kubernetes the shell-form symptom is unmistakable: **every Pod deletion takes the full 30
+seconds**, and in-flight requests fail during rollouts.
+
+When a shell genuinely is needed — an entrypoint script that prepares configuration — end the
+script with **`exec`**, which replaces the shell with the application so the application becomes
+PID 1:
+
+```sh
+#!/bin/sh
+# docker-entrypoint.sh
+echo "preparing config…"
+exec "$@"            # "$@" = the arguments the script received (the CMD); the app takes over PID 1
+```
+
+```dockerfile
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/app", "--port=8080"]
+```
+
+The alternative is a tiny init as PID 1 that forwards signals and reaps zombies: `tini`,
+`docker run --init`, or in Kubernetes `shareProcessNamespace: true` (the Pod's pause container
+becomes PID 1).
+
+### 4.5 How this maps to Kubernetes
+
 How the image config maps onto a Kubernetes container spec — **learn this table, it is asked
 constantly**:
 
@@ -275,6 +391,51 @@ constantly**:
 | `WORKDIR` | `workingDir` | Pod spec wins |
 | `USER` | `securityContext.runAsUser` | Pod spec wins |
 | `EXPOSE` | `ports[].containerPort` | Both are informational |
+
+Watch the naming: Kubernetes **`command` is Docker's ENTRYPOINT**, not Docker's `CMD`.
+
+The four combinations, for the image above:
+
+| The Pod sets | What runs |
+|---|---|
+| neither | `/app --port=8080` — both from the image |
+| `args: ["--port=9090"]` | `/app --port=9090` |
+| `command: ["/app", "--verbose"]` | `/app --verbose` — **the image's CMD is dropped**, same rule as `--entrypoint` |
+| `command: ["/app"]` and `args: ["--port=9090"]` | `/app --port=9090` |
+
+```yaml
+containers:
+- name: app
+  image: registry.example.com/app:1.4.2
+  args: ["--port=9090"]                 # keeps ENTRYPOINT /app, replaces CMD
+```
+
+```bash
+kubectl run a --image=<img> -- --port=9090                  # words after -- become args
+kubectl run b --image=<img> --command -- /app --verbose     # --command: they become command
+```
+
+Kubernetes `command`/`args` are exec form too — no shell. For shell features, call a shell
+explicitly (`command: ["sh", "-c", "echo $HOSTNAME && exec /app"]`), which works only if the image
+contains one. Kubernetes does its own expansion of **`$(VAR_NAME)`** for variables defined in the
+container's `env` — used in `00-06` as `-text=v1 served by $(POD_NAME)`.
+
+### 4.6 Why this Dockerfile pairs them this way
+
+- The base image is **distroless: there is no shell at all**. Exec form is not just better here, it
+  is required — a shell-form line would fail at start with `/bin/sh: no such file or directory`.
+- The binary goes in ENTRYPOINT so that `docker run img --port=9090` or a Pod's `args` changes only
+  the flags; nobody replaces the program by accident.
+- The port goes in CMD: a sensible default that each environment can override without a rebuild.
+
+| Question | Answer |
+|---|---|
+| What runs? | ENTRYPOINT + CMD → `/app --port=8080` |
+| Change only the flags? | `docker run img <flags>`, or `args:` in a Pod |
+| Change the program? | `--entrypoint`, or `command:` in a Pod — both also drop CMD |
+| Why the brackets? | Exec form: no shell, so the app is PID 1 and receives SIGTERM directly |
+| Without the brackets? | A shell is PID 1, SIGTERM is lost, stops take the full grace period (exit 137), and CMD is ignored |
+| Entrypoint is a script? | End it with `exec "$@"` |
 
 ---
 
@@ -356,6 +517,10 @@ namespace).
    or `port-forward` is what makes traffic arrive.
 8. **Shell-form CMD swallows SIGTERM.** Symptom: every graceful shutdown takes the full grace
    period.
+9. **Overriding the program drops the default arguments.** `docker run --entrypoint` and a Pod's
+   `command` both discard the image's CMD.
+10. **Exec form needs double quotes.** `ENTRYPOINT ['/app']` is not JSON, so Docker silently uses shell
+    form. And a shell-form ENTRYPOINT ignores CMD and `docker run` arguments entirely.
 
 ---
 
@@ -453,10 +618,154 @@ docker image inspect nginx:1.27 --format 'Entrypoint={{json .Config.Entrypoint}}
 ✅ **Verify:** write down nginx's `Entrypoint` and `Cmd`. Now answer: if a Pod sets
 `args: ["nginx", "-g", "daemon off;"]` but no `command`, what runs? (Answer in the self-check.)
 
-### 9.7 Clean up
+### 9.7 ENTRYPOINT and CMD, hands-on (§4)
+
+You will build the same tiny "app" three ways — exec form, shell form, and an entrypoint script
+with `exec` — and watch argument handling and shutdown behave differently.
+
+**The app.** A shell script stands in for a real binary. It prints its PID and arguments, exits
+immediately if given `--once`, and otherwise runs until it receives SIGTERM, which it handles:
+
+```bash
+mkdir -p ~/ep-lab && cd ~/ep-lab
+
+cat > app.sh <<'EOF'
+#!/bin/sh
+trap 'echo "app: got SIGTERM, shutting down cleanly"; exit 0' TERM
+echo "app: PID $$, args: $*"
+case " $* " in *" --once "*) exit 0 ;; esac
+while :; do sleep 1 & wait $!; done
+EOF
+
+cat > Dockerfile.exec <<'EOF'
+FROM alpine:3.20
+COPY app.sh /app
+RUN chmod +x /app
+ENTRYPOINT ["/app"]
+CMD ["--port=8080"]
+EOF
+
+# shell form. The "||" forces the shell to stay alive (it must check /app's exit status),
+# exactly like real-world lines such as "ENTRYPOINT /app --port=8080 || echo failed"
+cat > Dockerfile.shell <<'EOF'
+FROM alpine:3.20
+COPY app.sh /app
+RUN chmod +x /app
+ENTRYPOINT /app --port=8080 || echo "app exited with an error"
+CMD ["--ignored"]
+EOF
+
+cat > entrypoint.sh <<'EOF'
+#!/bin/sh
+echo "entrypoint: preparing config..."
+exec "$@"
+EOF
+
+cat > Dockerfile.wrapper <<'EOF'
+FROM alpine:3.20
+COPY app.sh /app
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /app /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app", "--port=8080"]
+EOF
+
+docker build -q -t ep:exec    -f Dockerfile.exec .
+docker build -q -t ep:shell   -f Dockerfile.shell .
+docker build -q -t ep:wrapper -f Dockerfile.wrapper .
+```
+
+**a) What the config stores.**
+
+```bash
+for t in exec shell wrapper; do
+  docker image inspect ep:$t --format "$t: Entrypoint={{json .Config.Entrypoint}} Cmd={{json .Config.Cmd}}"
+done
+```
+
+✅ **Verify:** the shell-form image's Entrypoint is `["/bin/sh","-c","/app --port=8080 || …"]` —
+the rewrite from §4.3 happened at build time.
+
+**b) Overrides (exec form).** Predict each output before running it.
+
+```bash
+docker run --rm ep:exec --once                          # args: --once           (all of CMD replaced)
+docker run --rm ep:exec --port=9090 --once              # args: --port=9090 --once
+docker run --rm --entrypoint /bin/echo ep:exec hello    # hello                  (program replaced)
+docker run --rm --entrypoint /bin/echo ep:exec          # (empty line)           (CMD cleared too)
+```
+
+✅ **Verify:** every line matches §4.2. Note `PID 1` in the app's output: in exec form the app *is*
+PID 1.
+
+**c) Overrides (shell form).**
+
+```bash
+docker run -d --name s-args ep:shell --once
+sleep 2; docker logs s-args                             # args: --port=8080  — "--once" and CMD both ignored
+docker rm -f s-args
+```
+
+✅ **Verify:** the shell-form ENTRYPOINT ignored both the image's CMD (`--ignored`) and your
+`--once`, so the container did not exit.
+
+**d) Who is PID 1, and who gets SIGTERM.**
+
+```bash
+docker run -d --name e1 ep:exec
+docker run -d --name s1 ep:shell
+docker run -d --name w1 ep:wrapper
+
+docker exec e1 ps          # PID 1 = /bin/sh /app --port=8080   (the app script itself)
+docker exec s1 ps          # PID 1 = /bin/sh -c /app --port=8080 || …,  the app is a child
+docker exec w1 ps          # PID 1 = /bin/sh /app --port=8080   (exec replaced the entrypoint script)
+
+time docker stop e1; docker logs e1 | tail -1; docker inspect e1 --format 'exit={{.State.ExitCode}}'
+time docker stop s1; docker logs s1 | tail -1; docker inspect s1 --format 'exit={{.State.ExitCode}}'
+time docker stop w1; docker logs w1 | tail -1; docker inspect w1 --format 'exit={{.State.ExitCode}}'
+docker rm e1 s1 w1
+```
+
+✅ **Verify:**
+
+| Image | Stop time | Last log line | Exit code |
+|---|---|---|---|
+| `ep:exec` | ~1 s | `app: got SIGTERM, shutting down cleanly` | 0 |
+| `ep:shell` | ~10 s | `app: PID <not 1>, args: --port=8080` — the app never heard about the stop | 137 |
+| `ep:wrapper` | ~1 s | `app: got SIGTERM, shutting down cleanly` | 0 |
+
+Explain the shell-form row in one sentence using the words *PID 1*, *handler* and *forward*.
+
+**e) The same rules in Kubernetes** (needs the `k8s-lab` cluster from `00-02`). kind nodes cannot
+see images built on the host, so load them first:
+
+```bash
+cd ~/k8s-course && ./labs/new-lab.sh lab-00-01
+kind load docker-image ep:exec ep:shell --name k8s-lab
+
+kubectl run k-default --image=ep:exec
+kubectl run k-args    --image=ep:exec -- --port=9090                 # sets args
+kubectl run k-cmd     --image=ep:exec --command -- /app --verbose    # sets command → CMD dropped
+kubectl run k-shell   --image=ep:shell
+kubectl wait --for=condition=Ready pod --all --timeout=60s
+for p in k-default k-args k-cmd; do echo "$p → $(kubectl logs $p | head -1)"; done
+kubectl get pod k-args -o jsonpath='{.spec.containers[0].args}{"\n"}'
+
+time kubectl delete pod k-default        # ~1–2 s: SIGTERM handled
+time kubectl delete pod k-shell          # ~30 s: SIGTERM lost, SIGKILL after terminationGracePeriodSeconds
+```
+
+✅ **Verify:** `k-args` printed `args: --port=9090`, `k-cmd` printed `args: --verbose` (no
+`--port=8080`), and `k-shell` took the full 30-second grace period to delete — the Kubernetes face
+of the same PID 1 problem.
+
+### 9.8 Clean up
 
 ```bash
 docker container prune -f
+docker rmi ep:exec ep:shell ep:wrapper
+rm -rf ~/ep-lab
+cd ~/k8s-course && ./labs/clean-labs.sh       # only if you did step 9.7 e)
 ```
 
 ---
@@ -475,6 +784,9 @@ docker container prune -f
 10. Two containers in the same Pod both try to listen on port 8080. What happens and why?
 11. Where on a Linux node do cgroup limits live, and which file does `resources.limits.memory` become? Which one does `resources.limits.cpu` become?
 12. Why must the kubelet and containerd agree on the cgroup driver, and where is each one set?
+13. An image has `ENTRYPOINT ["/app"]` and `CMD ["--port=8080"]`. What runs for: `docker run img --debug`; `docker run --entrypoint /bin/sh img`; a Pod with only `command: ["/app", "--verbose"]`?
+14. A Dockerfile ends with `ENTRYPOINT /app --port=8080 || echo failed`. Which process is PID 1, what happens on `docker stop`, and what exit code do you expect?
+15. Your image needs a startup script before the app. How do you keep graceful shutdown working?
 
 <details>
 <summary>Answers</summary>
@@ -491,6 +803,9 @@ docker container prune -f
 10. The second fails to bind (`address already in use`) and crashes. Containers in a Pod **share the network namespace** — one set of ports.
 11. Under `/sys/fs/cgroup/` (cgroup v2), one directory per group. `limits.memory` → **`memory.max`**; `limits.cpu` → **`cpu.max`** (quota per period). CPU requests become `cpu.weight`.
 12. Both create and manage the same Pod cgroups; with different drivers (`systemd` vs `cgroupfs`) they build conflicting cgroup trees and the node misbehaves or goes NotReady. Kubelet: `cgroupDriver` in `/var/lib/kubelet/config.yaml`. containerd: `SystemdCgroup = true` in `/etc/containerd/config.toml`.
+13. `/app --debug` (all of CMD replaced, so `--port=8080` is gone); `/bin/sh` (ENTRYPOINT replaced **and** CMD cleared); `/app --verbose` (`command` replaces ENTRYPOINT and drops CMD).
+14. `/bin/sh -c "/app --port=8080 || echo failed"` is PID 1, because shell form wraps the string in a shell, which must stay alive to evaluate `||`. SIGTERM reaches the shell, which has no handler and does not forward it; after the grace period SIGKILL ends everything: exit **137**, after 10 s in Docker or 30 s in Kubernetes.
+15. Use an exec-form ENTRYPOINT pointing at the script, end the script with **`exec "$@"`**, and put the app command in CMD. `exec` replaces the shell with the app, which becomes PID 1 and receives SIGTERM. (Alternatively: `tini` / `docker run --init` as PID 1.)
 
 </details>
 
