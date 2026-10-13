@@ -1,0 +1,25 @@
+# kind cluster used by every lab in this course.
+# Create:  ./cluster-up.ps1   (or: kind create cluster --config labs/kind-cluster.yaml)
+# Delete:  ./cluster-down.ps1 (or: kind delete cluster --name k8s-lab)
+#
+# To pin the Kubernetes version, add `image: kindest/node:vX.Y.Z` to each node,
+# using an exact tag from the release notes of your kind version.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8s-lab
+nodes:
+  - role: control-plane
+    labels:
+      ingress-ready: "true"          # ingress / gateway controllers in Domain 3 select this node
+    extraPortMappings:               # lab-machine port -> node container port
+      - containerPort: 80            # ingress HTTP  -> http://localhost:8080
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 443           # ingress HTTPS -> https://localhost:8443
+        hostPort: 8443
+        protocol: TCP
+      - containerPort: 30080         # NodePort used in 00-06 -> http://localhost:30080
+        hostPort: 30080
+        protocol: TCP
+  - role: worker
+  - role: worker
