@@ -36,10 +36,12 @@ graph TB
     subgraph N1["Worker node"]
         KL["kubelet<br/><i>runs Pods for its node</i>"]
         KP["kube-proxy<br/><i>Service → Pod rules</i>"]
-        CRI["containerd (CRI)"]
-        CNI["CNI plugin<br/><i>Pod networking</i>"]
-        KL --> CRI
-        KL --> CNI
+        CRI["containerd<br/><i>CRI runtime</i>"]
+        CNI["CNI plugin<br/><i>Pod IP and routes</i>"]
+        RUNC["runc<br/><i>OCI runtime</i>"]
+        KL -->|CRI gRPC| CRI
+        CRI -->|per Pod sandbox| CNI
+        CRI -->|OCI spec| RUNC
     end
     USER["kubectl / CI / controllers"] -->|HTTPS + auth| API
     KL -->|watch Pods for this node,<br/>report status| API
@@ -50,6 +52,11 @@ graph TB
 **The one rule that explains the picture: every component talks only to the API server.** No
 component talks to another directly, and nothing except the API server touches etcd. Components
 coordinate by **writing objects** and **watching objects**.
+
+Inside a node there is one more chain, and it is local plumbing, not cluster coordination: the
+**kubelet** drives the **container runtime** over **CRI**; the runtime calls the **CNI plugin** to
+give each Pod sandbox its network, and **runc** (OCI) to start each container process. The kubelet
+never calls CNI itself — that changed when dockershim was removed in v1.24 (`00-01` §3.6).
 
 ---
 
@@ -149,8 +156,9 @@ substitute).
 A **systemd service on every node** (not a Pod). It:
 
 1. Watches the API server for Pods **bound to its node**.
-2. Asks the runtime over **CRI** to create the Pod sandbox (network namespace via **CNI**) and the
-   containers; mounts volumes; injects Secrets/ConfigMaps.
+2. Prepares volumes (including Secrets/ConfigMaps), then asks the runtime over **CRI** to create
+   the Pod sandbox and the containers. The **runtime**, not the kubelet, calls the **CNI** plugin
+   to set up the sandbox's network namespace and Pod IP.
 3. Runs **probes** (liveness, readiness, startup) and applies the `restartPolicy`.
 4. Reports Pod **status** and Node **status** back to the API server, and renews its **Lease**
    in the `kube-node-lease` namespace every ~10 s as a heartbeat.
