@@ -253,6 +253,22 @@ h3 {
   .comp-detail > div:first-child { border-top: 0; }
 }
 
+.card { margin-top: 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 12px 18px; background: var(--surface-2); border-bottom: 1px solid var(--rule); }
+.card-head .k { font: 600 11.5px/1 var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); }
+#cardName { font: 600 14px/1 var(--f-mono); color: var(--accent); }
+.card-note { font: 400 12.5px/1.3 var(--f-body); font-style: italic; color: var(--ink-3); margin-left: auto; }
+.card dl { margin: 0; display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); }
+.card dt, .card dd { padding: 9px 18px; border-bottom: 1px solid var(--rule); margin: 0; min-width: 0; }
+.card dt { font: 600 13px/1.45 var(--f-display); font-stretch: 92%; color: var(--ink-2); }
+.card dd { font: 400 13px/1.5 var(--f-mono); overflow-wrap: anywhere; }
+.card dt:nth-last-of-type(1), .card dd:last-of-type { border-bottom: 0; }
+@media (max-width: 600px) {
+  .card dl { grid-template-columns: minmax(0, 1fr); }
+  .card dt { border-bottom: 0; padding-bottom: 0; }
+  .card-note { margin-left: 0; }
+}
+
 /* ---------- object catalogue ---------- */
 .tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -370,12 +386,16 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule);
 <section aria-labelledby="h-chain">
   <p class="eyebrow">00-03 · the chain of responsibility</p>
   <h2 id="h-chain">Who does what when you apply</h2>
-  <p class="lede">Every component talks only to the API server. When one stops, the chain stops at its step and resumes by itself when it returns. Pick a component to see what you would observe if it were down, and where to look.</p>
+  <p class="lede">Every component talks only to the API server. When one stops, the chain stops at its step and resumes by itself when it returns. Pick a component to see what you would observe if it were down, where to look, and its reference card: how it runs, its ports, config, credentials, logs and how to restart it.</p>
   <div class="chain" id="chain" role="group" aria-label="Control plane and node components"></div>
   <div class="comp-detail" id="compDetail" aria-live="polite">
     <div><div class="k">Its job</div><p id="cdJob"></p></div>
     <div class="down"><div class="k">If it is down</div><p id="cdDown"></p></div>
     <div class="where"><div class="k">Where to look</div><p id="cdWhere"></p></div>
+  </div>
+  <div class="card" aria-live="polite">
+    <div class="card-head"><span class="k">Component card</span> <span id="cardName"></span><span class="card-note">kubeadm default paths, as on kind and the CKA clusters</span></div>
+    <dl id="card"></dl>
   </div>
 </section>
 
@@ -505,15 +525,24 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule);
 
   /* ---- component chain ---- */
   var comps = [
-    ["kubectl", "A client. Sends authenticated HTTPS requests to the API server and returns as soon as the object is stored, not when it is running.", "Nothing in the cluster is affected. If kubectl cannot connect, suspect the kubeconfig context first, then the API server.", "kubectl config current-context\nkubectl cluster-info\n~/.kube/config"],
-    ["kube-apiserver", "The only door. Authenticates, authorises, runs admission, validates, then stores in etcd. Serves watches to every other component.", "kubectl reports connection refused or times out. Running containers keep running, but nothing can be changed or rescheduled.", "On the control-plane node:\ncrictl ps -a --name kube-apiserver\ncrictl logs <id>\n/etc/kubernetes/manifests/kube-apiserver.yaml"],
-    ["etcd", "The only state. A Raft key-value store; a write commits when a majority of members agree.", "The API server fails its health checks and requests error out. Lose etcd without a backup and the cluster's entire state is gone.", "crictl logs <etcd-id>\n/etc/kubernetes/manifests/etcd.yaml\netcdctl endpoint health (with the TLS flags)"],
-    ["controller-manager", "Runs the reconcile loops: Deployment → ReplicaSet → Pods, Node lifecycle, Jobs, EndpointSlices, garbage collection.", "A new Deployment shows READY 0/N with no ReplicaSet. Scaling and deleted Pods are not acted on.", "kubectl -n kube-system get pods -l component=kube-controller-manager\nkubectl -n kube-system logs -l component=kube-controller-manager\n/etc/kubernetes/manifests/"],
-    ["scheduler", "Filters and scores nodes for Pods with an empty nodeName, then writes the binding. It never starts anything.", "New Pods stay Pending with Events: <none>. A running scheduler that cannot place a Pod would emit FailedScheduling instead.", "kubectl describe pod <p>   (no events?)\nkubectl -n kube-system logs -l component=kube-scheduler\n/etc/kubernetes/manifests/kube-scheduler.yaml"],
-    ["kubelet", "A systemd service on every node. Runs the Pods bound to its node through CRI, runs probes, reports status, renews the node Lease.", "The node goes NotReady after about 40–50 s; its Pods are evicted after 300 s and only controller-owned Pods are recreated elsewhere.", "systemctl status kubelet\njournalctl -u kubelet --no-pager | tail -50\n/var/lib/kubelet/config.yaml"],
-    ["runtime + CNI", "containerd (via CRI) pulls images and starts containers; the CNI plugin gives each Pod its IP and routes.", "Pods sit in ContainerCreating with sandbox or network errors in their events; images fail to pull.", "kubectl describe pod <p>   (Events)\ncrictl ps -a ; crictl pods\nsystemctl status containerd"],
-    ["kube-proxy", "A DaemonSet that programs iptables/nftables so traffic to a Service IP is rewritten to a Ready Pod IP.", "DNS resolves and Pods are healthy, but connections to the Service IP hang or are refused.", "kubectl -n kube-system get ds kube-proxy\nkubectl get endpointslices -l kubernetes.io/service-name=<svc>\niptables-save | grep <svc>"],
-    ["CoreDNS", "The cluster DNS server, behind the kube-dns Service. Answers <svc>.<ns>.svc.cluster.local with the ClusterIP.", "Name lookups fail inside Pods while connections to IPs still work.", "kubectl -n kube-system get pods -l k8s-app=kube-dns\nkubectl run t --rm -it --image=busybox:1.37 --restart=Never -- nslookup kubernetes"]
+    ["kubectl", "A client. Sends authenticated HTTPS requests to the API server and returns as soon as the object is stored, not when it is running.", "Nothing in the cluster is affected. If kubectl cannot connect, suspect the kubeconfig context first, then the API server.", "kubectl config current-context\nkubectl cluster-info\n~/.kube/config",
+      [["Runs as", "A binary on your machine"], ["Config", "~/.kube/config (or $KUBECONFIG); admins on a node: /etc/kubernetes/admin.conf"], ["Authenticates with", "Client cert, token or exec plugin from the kubeconfig user"], ["Debug", "kubectl … -v=6 prints every HTTP call"]]],
+    ["kube-apiserver", "The only door. Authenticates, authorises, runs admission, validates, then stores in etcd. Serves watches to every other component.", "kubectl reports connection refused or times out. Running containers keep running, but nothing can be changed or rescheduled.", "On the control-plane node:\ncrictl ps -a --name kube-apiserver\ncrictl logs <id>\n/etc/kubernetes/manifests/kube-apiserver.yaml",
+      [["Runs as", "Static Pod · /etc/kubernetes/manifests/kube-apiserver.yaml"], ["Port", "6443"], ["Key flags", "--etcd-servers, --service-cluster-ip-range, --authorization-mode=Node,RBAC, --enable-admission-plugins"], ["Certificates", "pki/apiserver.crt · pki/apiserver-etcd-client.crt · pki/apiserver-kubelet-client.crt · trusts pki/ca.crt"], ["Logs", "kubectl -n kube-system logs kube-apiserver-<node> · when down: crictl logs, /var/log/pods/"], ["Restart", "Edit the manifest; the kubelet recreates it"]]],
+    ["etcd", "The only state. A Raft key-value store; a write commits when a majority of members agree.", "The API server fails its health checks and requests error out. Lose etcd without a backup and the cluster's entire state is gone.", "crictl logs <etcd-id>\n/etc/kubernetes/manifests/etcd.yaml\netcdctl endpoint health (with the TLS flags)",
+      [["Runs as", "Static Pod · /etc/kubernetes/manifests/etcd.yaml"], ["Ports", "2379 clients · 2380 peers · 2381 metrics (localhost)"], ["Data", "/var/lib/etcd (hostPath volume)"], ["Certificates", "pki/etcd/ca.crt (its own CA) · server.crt/.key · peer.crt · healthcheck-client.crt"], ["etcdctl", "--endpoints=https://127.0.0.1:2379 --cacert=…/etcd/ca.crt --cert=…/etcd/server.crt --key=…/etcd/server.key"], ["Restart", "Edit the manifest"]]],
+    ["controller-manager", "Runs the reconcile loops: Deployment → ReplicaSet → Pods, Node lifecycle, Jobs, EndpointSlices, garbage collection.", "A new Deployment shows READY 0/N with no ReplicaSet. Scaling and deleted Pods are not acted on.", "kubectl -n kube-system get pods -l component=kube-controller-manager\nkubectl -n kube-system logs -l component=kube-controller-manager\n/etc/kubernetes/manifests/",
+      [["Runs as", "Static Pod · /etc/kubernetes/manifests/kube-controller-manager.yaml"], ["Port", "10257 (health, metrics)"], ["Authenticates with", "/etc/kubernetes/controller-manager.conf"], ["Signs", "CSRs with pki/ca.crt + ca.key · ServiceAccount tokens with pki/sa.key"], ["Leader lease", "kube-system/kube-controller-manager"], ["Restart", "Edit the manifest"]]],
+    ["scheduler", "Filters and scores nodes for Pods with an empty nodeName, then writes the binding. It never starts anything.", "New Pods stay Pending with Events: <none>. A running scheduler that cannot place a Pod would emit FailedScheduling instead.", "kubectl describe pod <p>   (no events?)\nkubectl -n kube-system logs -l component=kube-scheduler\n/etc/kubernetes/manifests/kube-scheduler.yaml",
+      [["Runs as", "Static Pod · /etc/kubernetes/manifests/kube-scheduler.yaml"], ["Port", "10259 (health, metrics)"], ["Authenticates with", "/etc/kubernetes/scheduler.conf"], ["Key flags", "--kubeconfig, --leader-elect, --config"], ["Leader lease", "kube-system/kube-scheduler"], ["Restart", "Edit the manifest"]]],
+    ["kubelet", "A systemd service on every node. Runs the Pods bound to its node through CRI, runs probes, reports status, renews the node Lease.", "The node goes NotReady after about 40–50 s; its Pods are evicted after 300 s and only controller-owned Pods are recreated elsewhere.", "systemctl status kubelet\njournalctl -u kubelet --no-pager | tail -50\n/var/lib/kubelet/config.yaml",
+      [["Runs as", "systemd service kubelet, on every node"], ["Ports", "10250 kubelet API · 10248 healthz (localhost)"], ["Config", "/var/lib/kubelet/config.yaml · flags: /var/lib/kubelet/kubeadm-flags.env · unit: systemctl cat kubelet"], ["Authenticates with", "/etc/kubernetes/kubelet.conf → /var/lib/kubelet/pki/kubelet-client-current.pem"], ["Logs", "journalctl -u kubelet"], ["Restart", "systemctl restart kubelet (daemon-reload after unit edits)"]]],
+    ["runtime + CNI", "containerd (via CRI) pulls images and starts containers; the CNI plugin gives each Pod its IP and routes.", "Pods sit in ContainerCreating with sandbox or network errors in their events; images fail to pull.", "kubectl describe pod <p>   (Events)\ncrictl ps -a ; crictl pods\nsystemctl status containerd",
+      [["containerd", "systemd service · /etc/containerd/config.toml (SystemdCgroup = true)"], ["Socket", "unix:///run/containerd/containerd.sock · crictl reads /etc/crictl.yaml"], ["CNI files", "config /etc/cni/net.d/ · binaries /opt/cni/bin/"], ["CNI agent", "DaemonSet (kindnet here; Calico, Cilium elsewhere)"], ["Logs", "journalctl -u containerd · CNI Pod logs"], ["Restart", "systemctl restart containerd (containers survive)"]]],
+    ["kube-proxy", "A DaemonSet that programs iptables/nftables so traffic to a Service IP is rewritten to a Ready Pod IP.", "DNS resolves and Pods are healthy, but connections to the Service IP hang or are refused.", "kubectl -n kube-system get ds kube-proxy\nkubectl get endpointslices -l kubernetes.io/service-name=<svc>\niptables-save | grep <svc>",
+      [["Runs as", "DaemonSet kube-system/kube-proxy · hostNetwork"], ["Ports", "10256 healthz · 10249 metrics (localhost)"], ["Config", "ConfigMap kube-system/kube-proxy, key config.conf (mode, clusterCIDR)"], ["Authenticates with", "ServiceAccount kube-proxy"], ["Logs", "kubectl -n kube-system logs ds/kube-proxy"], ["Restart", "kubectl -n kube-system rollout restart ds kube-proxy"]]],
+    ["CoreDNS", "The cluster DNS server, behind the kube-dns Service. Answers <svc>.<ns>.svc.cluster.local with the ClusterIP.", "Name lookups fail inside Pods while connections to IPs still work.", "kubectl -n kube-system get pods -l k8s-app=kube-dns\nkubectl run t --rm -it --image=busybox:1.37 --restart=Never -- nslookup kubernetes",
+      [["Runs as", "Deployment kube-system/coredns, behind Service kube-dns (often 10.96.0.10)"], ["Ports", "53 UDP/TCP · 9153 metrics · 8080 /health · 8181 /ready"], ["Config", "ConfigMap kube-system/coredns, key Corefile"], ["How Pods find it", "kubelet clusterDNS → each Pod's /etc/resolv.conf"], ["Logs", "kubectl -n kube-system logs -l k8s-app=kube-dns"], ["Restart", "kubectl -n kube-system rollout restart deploy coredns"]]]
   ];
   var chain = document.getElementById("chain");
   var btns = [];
@@ -524,6 +553,13 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule);
     var w = document.getElementById("cdWhere");
     w.textContent = "";
     comps[i][3].split("\n").forEach(function (line, k) { if (k) w.appendChild(document.createElement("br")); w.appendChild(document.createTextNode(line)); });
+    document.getElementById("cardName").textContent = comps[i][0];
+    var dl = document.getElementById("card");
+    dl.textContent = "";
+    comps[i][4].forEach(function (r) {
+      dl.appendChild(el("dt")).textContent = r[0];
+      dl.appendChild(el("dd")).textContent = r[1];
+    });
   }
   comps.forEach(function (c, i) {
     if (i) chain.appendChild(el("span", "arrow", "→"));

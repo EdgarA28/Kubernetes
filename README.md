@@ -58,7 +58,7 @@ kubernetes/
 |---|---|---|
 | 00-01 | [Containers, and why orchestration exists](00-foundations/00-01-containers-and-why-orchestration.md) | Namespaces, cgroups, images and layers, OCI, the runtime stack, what Kubernetes is and is not |
 | 00-02 | [Lab environment: kind, kubectl and the tooling](00-foundations/00-02-lab-environment-kind.md) | Install the tools, create a 3-node cluster, kubeconfig contexts, the lab rules |
-| 00-03 | [Cluster architecture](00-foundations/00-03-cluster-architecture.md) | Every control plane and node component, what happens on `kubectl apply`, static Pods |
+| 00-03 | [Cluster architecture](00-foundations/00-03-cluster-architecture.md) | Every control plane and node component, a reference card for each, what happens on `kubectl apply`, static Pods |
 | 00-04 | [The API and the object model](00-foundations/00-04-api-and-object-model.md) | Groups/versions/kinds, spec vs status, labels, namespaces, owners, finalizers, YAML traps |
 | 00-05 | [kubectl fluency](00-foundations/00-05-kubectl-fluency.md) | kubeconfig, verbs, output formats, generating YAML, apply vs create, patch |
 | 00-06 | [Your first application, end to end](00-foundations/00-06-first-app-end-to-end.md) | Pod → Deployment → Service → scale → rollout → rollback → debug |
