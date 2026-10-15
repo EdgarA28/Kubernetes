@@ -23,6 +23,7 @@ Written against **Kubernetes v1.36**. **Target: the CKA exam.** Labs run in **ba
 | Want every Kubernetes object on one map | [`00-foundations/00-07`](00-foundations/00-07-object-catalogue.md) — the object catalogue |
 | Need a term defined | [`reference/glossary.md`](reference/glossary.md) |
 | Need a command | [`reference/kubectl-cheatsheet.md`](reference/kubectl-cheatsheet.md) |
+| Need how a component runs, its config, logs or restart command | [`reference/component-cards.md`](reference/component-cards.md) |
 | Want to test myself on the foundations | [`practice/00-foundations-exam.md`](practice/00-foundations-exam.md) — score 20+ before Domain 1 |
 | Prefer to revise from a page, not a file tree | [Kubernetes Foundations](https://claude.ai/artifact/Rx7WqRDiWXvyH6VeWzYkBC) (source: `site/foundations.html`) |
 
@@ -46,7 +47,7 @@ kubernetes/
 ├── 09-extending/              ← CRDs, controllers, operators, webhooks
 ├── 10-production/             ← GitOps, service mesh, multi-tenancy, DR, capstone
 ├── labs/                      ← kind config + cluster and cleanup scripts
-├── reference/                 ← glossary, kubectl cheat sheet
+├── reference/                 ← glossary, kubectl cheat sheet, component reference cards
 ├── practice/                  ← question banks per domain + mock exams
 ├── notes/                     ← YOUR notes and progress (never touched by course updates)
 └── site/                      ← published HTML version of each domain

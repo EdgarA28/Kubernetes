@@ -113,7 +113,7 @@ kubernetes/
 ├── 09-extending/              ← Domain 9
 ├── 10-production/             ← Domain 10
 ├── labs/                      ← kind cluster config, cluster up/down, lab cleanup scripts
-├── reference/                 ← glossary, kubectl cheat sheet, decision tables
+├── reference/                 ← glossary, kubectl cheat sheet, component reference cards, decision tables
 └── practice/                  ← question banks per domain + mock exams
 ```
 
@@ -368,7 +368,7 @@ cannot be passed without it (25%).
 
 - ✅ **Domain 0 — Foundations**, seven modules (six on the full ten-part template + the object catalogue)
 - ✅ **`labs/`** — kind cluster config, `cluster-up`/`cluster-down`, `new-lab`, `clean-labs` (bash)
-- ✅ **`reference/glossary.md`** and **`reference/kubectl-cheatsheet.md`**
+- ✅ **`reference/glossary.md`**, **`reference/kubectl-cheatsheet.md`** and **`reference/component-cards.md`**
 - ✅ **`practice/00-foundations-exam.md`** — 25 questions + 5 hands-on tasks with worked answers
 - ✅ **Domain 1–10 READMEs** — planned module lists and per-domain point-losers
 - ✅ **Published page:** [Kubernetes Foundations](https://claude.ai/artifact/Rx7WqRDiWXvyH6VeWzYkBC) — source in `site/foundations.html`

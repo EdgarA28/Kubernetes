@@ -112,7 +112,7 @@ kill on purpose.
   through the container runtime.
 - The kubelet and the runtime must use the **same cgroup driver**. On systemd-based nodes that
   means `cgroupDriver: systemd` in the kubelet config and `SystemdCgroup = true` in containerd's
-  `config.toml`. A mismatch is a classic broken-node fault (containerd card, `00-03` §3.10).
+  `config.toml`. A mismatch is a classic broken-node fault (containerd card in [`reference/component-cards.md`](../reference/component-cards.md)).
 
 > **CKA symptom pair:** *"the app is slow but never restarts"* → a CPU limit is throttling it
 > (`cpu.stat` shows `nr_throttled` climbing). *"It keeps restarting with exit code 137"* → the
