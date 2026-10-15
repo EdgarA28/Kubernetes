@@ -3,7 +3,7 @@
 > **Module type:** Foundation — the most load-bearing module in the course. Do not skim it.
 > **Time:** ~2 hours (60 reading, 60 lab)
 > **Prerequisites:** `00-01`, `00-02` (a running `k8s-lab` cluster)
-> **Maps to:** CKA *Cluster architecture, installation & configuration* (25%) and *Troubleshooting* (30%) — every "the control plane is broken, fix it" task assumes this module
+> **Maps to:** CKA (Certified Kubernetes Administrator) *Cluster architecture, installation & configuration* (25%) and *Troubleshooting* (30%) — every "the control plane is broken, fix it" task assumes this module
 
 ---
 
@@ -54,9 +54,74 @@ component talks to another directly, and nothing except the API server touches e
 coordinate by **writing objects** and **watching objects**.
 
 Inside a node there is one more chain, and it is local plumbing, not cluster coordination: the
-**kubelet** drives the **container runtime** over **CRI**; the runtime calls the **CNI plugin** to
-give each Pod sandbox its network, and **runc** (OCI) to start each container process. The kubelet
-never calls CNI itself — that changed when dockershim was removed in v1.24 (`00-01` §3.6).
+**kubelet** drives the **container runtime** over **CRI** (Container Runtime Interface); the
+runtime calls the **CNI** (Container Network Interface) **plugin** to give each Pod sandbox its
+network, and **runc** — the OCI (Open Container Initiative) runtime — to start each container
+process. The kubelet never calls CNI itself — that changed when dockershim was removed in v1.24
+(`00-01` §3.6).
+
+### 2.1 Vocabulary — the objects this module talks about
+
+Section 3 explains each **component** (a program that makes up the cluster). These are the
+**objects** (records stored in etcd through the API server) that those components read and write:
+
+| Object | What it is |
+|---|---|
+| **Pod** | The smallest thing Kubernetes runs: one or more containers that share a network namespace (one IP address) and volumes, and are always placed on the same node |
+| **Pod sandbox** | The empty "shell" the runtime creates first for each Pod — its network namespace and IP — before any of the Pod's containers start inside it |
+| **Node** | The API's record of a machine (physical or VM — Virtual Machine) that runs Pods: its capacity, conditions (`Ready`), taints and addresses |
+| **Namespace** | A named folder that groups objects and scopes their names, permissions and quotas (e.g. `kube-system`, `lab-00-03`) |
+| **Deployment** | Declares "run N identical Pods from this template" and manages rolling updates by creating a new ReplicaSet per version |
+| **ReplicaSet** | Keeps exactly `replicas` Pods matching its selector alive; normally created and owned by a Deployment |
+| **DaemonSet** | Runs one copy of a Pod on every node (or every matching node) — used for node agents like kube-proxy and CNI daemons |
+| **Job / CronJob** | A Job runs Pods until a task completes successfully; a CronJob creates Jobs on a schedule |
+| **Service** | A stable virtual IP (Internet Protocol) address and DNS (Domain Name System) name in front of a changing set of Pods, selected by labels |
+| **EndpointSlice** | The list of ready Pod IPs and ports currently behind a Service; kube-proxy reads it to program routing |
+| **ConfigMap** | Non-secret configuration data (key/value pairs or whole files) that Pods or components read |
+| **Secret** | Like a ConfigMap but for sensitive data (passwords, tokens, keys); base64-encoded, not encrypted by default |
+| **ServiceAccount** | An identity for processes running inside Pods, used to authenticate to the API server with a token |
+| **Lease** | A tiny object used as a heartbeat (one per node, in `kube-node-lease`) or as a lock for leader election (scheduler, controller manager) |
+| **Event** | A short, time-stamped report written by a component about something that happened to an object (`Scheduled`, `Pulled`, `FailedScheduling`…) |
+| **Binding** | The subresource the scheduler writes to assign a Pod to a node (it sets `spec.nodeName`) |
+| **CertificateSigningRequest (CSR)** | A request for the cluster CA (Certificate Authority) to sign a client certificate, e.g. for a joining kubelet or a new user |
+
+And the abbreviations you will meet:
+
+| Abbreviation | Full meaning | In one line |
+|---|---|---|
+| **API** | Application Programming Interface | The set of HTTP endpoints through which everything reads and writes cluster objects |
+| **CKA** | Certified Kubernetes Administrator | The hands-on exam this course prepares for |
+| **CRI** | Container Runtime Interface | The gRPC API the kubelet uses to ask a runtime (containerd, CRI-O) to create sandboxes and containers |
+| **CNI** | Container Network Interface | The standard for plugins that give Pods network interfaces, IPs and routes |
+| **OCI** | Open Container Initiative | The standards body defining image and runtime formats; runc is its reference runtime |
+| **runc** | "run container" | The low-level OCI runtime that actually creates the container process with namespaces and cgroups |
+| **gRPC** | gRPC Remote Procedure Call (originally Google RPC) | A binary, HTTP/2-based way for programs to call functions in each other — the transport of CRI |
+| **REST** | Representational State Transfer | API style where resources are URLs and you act on them with HTTP verbs (`GET`, `POST`, `PUT`, `DELETE`) |
+| **HTTP / HTTPS** | Hypertext Transfer Protocol / HTTP Secure | The web protocol; HTTPS is HTTP encrypted with TLS |
+| **TLS** | Transport Layer Security | Encryption and certificate-based identity for network connections |
+| **CA** | Certificate Authority | The key pair that signs certificates; anyone trusting the CA trusts the certs it signed |
+| **PKI** | Public Key Infrastructure | The set of CAs, certificates and keys a system uses — `/etc/kubernetes/pki/` |
+| **CSR** | Certificate Signing Request | A request for a CA to sign a certificate |
+| **RBAC** | Role-Based Access Control | Kubernetes' main authorization system: Roles grant verbs on resources, Bindings give Roles to users |
+| **OIDC** | OpenID Connect | An identity-provider login standard (Google, Entra ID, Keycloak…) the API server can trust |
+| **CEL** | Common Expression Language | A small expression language used for in-API validation and admission policies |
+| **etcd** | "/etc distributed" | The cluster database — named after Unix's `/etc` config directory plus *d* for distributed |
+| **DNS** | Domain Name System | Turns names (`web.lab.svc.cluster.local`) into IP addresses |
+| **IP** | Internet Protocol | The addressing layer of the network; every Pod and Service gets an IP address |
+| **CIDR** | Classless Inter-Domain Routing | Notation for an IP range, e.g. `10.244.0.0/16` |
+| **TCP / UDP** | Transmission Control Protocol / User Datagram Protocol | Reliable connection-based vs. fire-and-forget network transport |
+| **CPU** | Central Processing Unit | Processor capacity — one of the resources Pods request |
+| **VM** | Virtual Machine | A software-emulated computer; most cloud nodes are VMs |
+| **LB** | Load Balancer | A network device or service that spreads traffic across back ends |
+| **HPA** | Horizontal Pod Autoscaler | Scales a Deployment's replica count based on metrics such as CPU |
+| **IPVS** | IP Virtual Server | A Linux kernel load balancer; one of kube-proxy's modes |
+| **eBPF** | extended Berkeley Packet Filter | Small sandboxed programs loaded into the Linux kernel; Cilium uses it for networking |
+| **HA** | High Availability | Running several copies (e.g. 3 control-plane nodes) so one failure does not stop the cluster |
+| **CLI** | Command-Line Interface | A tool you drive by typing commands (`kubectl`, `crictl`, `etcdctl`) |
+| **crictl** | CRI control | The CLI that talks CRI directly to the runtime — works even when the API server is down |
+| **kubeadm** | Kubernetes admin | The official tool that bootstraps clusters; sets all the default paths in this module |
+| **kind** | Kubernetes IN Docker | Runs each Kubernetes node as a Docker container — your lab cluster |
+| **CI** | Continuous Integration | Automated pipelines (build, test, deploy) — another kind of API client |
 
 ---
 
@@ -64,7 +129,13 @@ never calls CNI itself — that changed when dockershim was removed in v1.24 (`0
 
 ### 3.1 kube-apiserver — the front door and the only gate to state
 
-A stateless REST server (horizontally scalable). Every request passes the same pipeline:
+**What it is:** the program that serves the Kubernetes API (Application Programming Interface) over
+HTTPS (HTTP Secure — HTTP encrypted with TLS, Transport Layer Security). It is the single entry
+point for `kubectl`, for every other component and for every controller, and the only program that
+reads or writes etcd.
+
+A stateless REST (Representational State Transfer) server (horizontally scalable — you can run
+several copies behind a load balancer). Every request passes the same pipeline:
 
 ```
 request ─► Authentication ─► Authorization ─► Mutating admission ─► Schema validation ─► Validating admission ─► etcd
@@ -72,6 +143,14 @@ request ─► Authentication ─► Authorization ─► Mutating admission ─
              certs, tokens,    RBAC, Node        e.g. ServiceAccount,                         e.g. PodSecurity,
              OIDC              authorizer        LimitRanger, webhooks                        ResourceQuota, CEL policies
 ```
+
+- **Authentication** — proves *who* sent the request: client certificates, ServiceAccount tokens,
+  or OIDC (OpenID Connect) tokens from an external identity provider.
+- **Authorization** — decides whether that identity *may* do this verb on this resource: RBAC
+  (Role-Based Access Control) for users and Pods, the Node authorizer for kubelets.
+- **Admission** — plugins and webhooks that can *change* (mutating) or *reject* (validating) an
+  object before it is stored. CEL (Common Expression Language) policies are validating rules
+  written inline in the API.
 
 | Fact | Detail |
 |---|---|
@@ -84,8 +163,13 @@ request ─► Authentication ─► Authorization ─► Mutating admission ─
 
 ### 3.2 etcd — the database
 
-A distributed, strongly consistent key-value store using the **Raft** consensus algorithm. Every
-object lives at a key such as `/registry/pods/<namespace>/<name>`.
+**What it is:** the cluster's database — the only place cluster state is stored. The name means
+"/etc distributed": Unix's `/etc` configuration directory plus *d* for distributed. If an object is
+not in etcd, as far as Kubernetes is concerned it does not exist.
+
+A distributed, strongly consistent key-value store using the **Raft** consensus algorithm (a
+protocol that lets several members agree on the same ordered list of writes, even if some fail).
+Every object lives at a key such as `/registry/pods/<namespace>/<name>`.
 
 | Fact | Detail |
 |---|---|
@@ -98,9 +182,12 @@ object lives at a key such as `/registry/pods/<namespace>/<name>`.
 
 ### 3.3 kube-scheduler — picks a node, and nothing else
 
+**What it is:** the control-plane component that decides **which node** each new Pod runs on. It
+is a placement decision-maker only — it writes one field and never touches a node.
+
 Watches for Pods with an **empty `spec.nodeName`**. For each one:
 
-1. **Filter** — remove nodes that cannot run it (insufficient CPU/memory *requests*, taints not
+1. **Filter** — remove nodes that cannot run it (insufficient CPU (Central Processing Unit)/memory *requests*, taints not
    tolerated, `nodeSelector`/affinity not matched, ports in use, volume zone mismatch…).
 2. **Score** — rank the survivors (spread, resource balance, image already present…).
 3. **Bind** — write the winner into the Pod's `spec.nodeName` via the `binding` subresource.
@@ -112,6 +199,11 @@ passes the filter, the Pod stays `Pending` with a `FailedScheduling` event expla
 > there to write one. "Pending + no events" is the signature. You will produce it in the lab.
 
 ### 3.4 kube-controller-manager — the reconcile loops
+
+**What it is:** a single program that bundles the built-in **controllers** — the automation that
+turns what you asked for (a Deployment with 3 replicas) into the objects that make it happen
+(a ReplicaSet, then Pods). A **controller** is a loop that compares the desired state of some
+objects with the actual state and acts to close the gap.
 
 One binary running many **controllers**. Each controller is a loop:
 
@@ -146,19 +238,29 @@ Two properties to internalise:
 
 ### 3.5 cloud-controller-manager
 
+**What it is:** the cloud-specific half of the controller manager, shipped by the cloud provider
+(AWS — Amazon Web Services, Azure, GCP — Google Cloud Platform…). It is the bridge between
+Kubernetes objects and the provider's own resources.
+
 Runs the controllers that need a cloud API: create a cloud **load balancer** for
-`type: LoadBalancer` Services, set up **routes**, delete Node objects when the VM is gone. Not
+`type: LoadBalancer` Services, set up **routes**, delete Node objects when the VM (Virtual Machine)
+is gone. Not
 present on kind (which is why LoadBalancer Services stay `<pending>` there until Domain 3 adds a
 substitute).
 
 ### 3.6 kubelet — the node agent
 
+**What it is:** the Kubernetes agent on each node — the component that turns "this Pod is assigned
+to this node" into real running containers, and reports back what is actually happening there.
+(**systemd** is the Linux service manager that starts and supervises background programs.)
+
 A **systemd service on every node** (not a Pod). It:
 
 1. Watches the API server for Pods **bound to its node**.
-2. Prepares volumes (including Secrets/ConfigMaps), then asks the runtime over **CRI** to create
-   the Pod sandbox and the containers. The **runtime**, not the kubelet, calls the **CNI** plugin
-   to set up the sandbox's network namespace and Pod IP.
+2. Prepares volumes (including Secrets/ConfigMaps), then asks the runtime over **CRI** (Container
+   Runtime Interface) to create the Pod sandbox and the containers. The **runtime**, not the
+   kubelet, calls the **CNI** (Container Network Interface) plugin to set up the sandbox's network
+   namespace and Pod IP (Internet Protocol address).
 3. Runs **probes** (liveness, readiness, startup) and applies the `restartPolicy`.
 4. Reports Pod **status** and Node **status** back to the API server, and renews its **Lease**
    in the `kube-node-lease` namespace every ~10 s as a heartbeat.
@@ -172,20 +274,34 @@ A **systemd service on every node** (not a Pod). It:
 
 ### 3.7 kube-proxy — Service routing on each node
 
+**What it is:** the per-node component that makes **Services** work — it turns "send traffic to
+this Service" into "send it to one of these Pods" by writing packet-rewriting rules into the Linux
+kernel. It does not carry traffic itself; the kernel does.
+
 Usually a **DaemonSet** (one Pod per node). Watches Services and EndpointSlices and programs the
 node's kernel so that traffic to a Service's virtual IP is rewritten to one of its Pod IPs. Modes:
-**iptables** (default on most clusters), **nftables** (modern replacement), **IPVS**. Some CNIs
-(Cilium) replace kube-proxy entirely with eBPF. Deep dive in `03-03`.
+**iptables** (Linux's classic packet-filtering rule tables; default on most clusters),
+**nftables** (its modern replacement), **IPVS** (IP Virtual Server, the kernel's built-in load
+balancer). Some CNIs (Cilium) replace kube-proxy entirely with eBPF (extended Berkeley Packet
+Filter — small programs loaded into the kernel). Deep dive in `03-03`.
 
 ### 3.8 Add-ons that are "just Pods"
 
-| Add-on | Job | Runs as |
+**What they are:** an **add-on** is a cluster feature that is not part of the core Kubernetes
+binaries but runs *on* the cluster as ordinary Pods (Deployments or DaemonSets), usually in
+`kube-system`. The cluster can technically start without them, but is not usable in practice.
+
+| Add-on | What it is / its job | Runs as |
 |---|---|---|
-| **CNI plugin** (kindnet here; Calico, Cilium, Flannel elsewhere) | Give each Pod an IP, route Pod↔Pod across nodes, sometimes enforce NetworkPolicy | DaemonSet + a binary in `/opt/cni/bin` that the runtime calls |
-| **CoreDNS** | Cluster DNS: `my-svc.my-ns.svc.cluster.local` → Service IP | Deployment (2 replicas) behind the `kube-dns` Service |
-| **metrics-server** | CPU/memory for `kubectl top` and the HPA | Deployment — *not* installed on kind by default (Domain 5) |
+| **CNI** (Container Network Interface) **plugin** (kindnet here; Calico, Cilium, Flannel elsewhere) | The Pod network: gives each Pod an IP, routes Pod↔Pod across nodes, sometimes enforces NetworkPolicy | DaemonSet + a binary in `/opt/cni/bin` that the runtime calls |
+| **CoreDNS** | The cluster's DNS (Domain Name System) server: `my-svc.my-ns.svc.cluster.local` → Service IP | Deployment (2 replicas) behind the `kube-dns` Service |
+| **metrics-server** | Collects live CPU/memory usage from kubelets for `kubectl top` and the HPA (Horizontal Pod Autoscaler) | Deployment — *not* installed on kind by default (Domain 5) |
 
 ### 3.9 Static Pods — how the control plane runs itself
+
+**What they are:** a **static Pod** is a Pod defined by a manifest file on a node's disk and run
+by that node's kubelet directly, without the API server or scheduler. A **mirror Pod** is the
+read-only copy the kubelet publishes to the API server so `kubectl` can see the static Pod.
 
 Chicken-and-egg: the API server runs as a Pod, but Pods need the API server. Answer: the kubelet
 can run Pods **directly from files** in its `staticPodPath` (with kubeadm and kind:
@@ -207,7 +323,14 @@ broken file in `/etc/kubernetes/manifests/`**, and you fix it on the node, not w
 Sections 3.1–3.9 explain what each component *does*. These cards are the lookup you need during a
 troubleshooting task: **how it runs, where its configuration lives, how it authenticates, where its
 logs are, and how to restart it.** All paths are **kubeadm defaults**, which kind and the CKA
-clusters both use. Lab step 9.8 has you verify every card on your own cluster.
+clusters both use (kubeadm — "Kubernetes admin" — is the official cluster bootstrap tool). Lab
+step 9.8 has you verify every card on your own cluster.
+
+Abbreviations used in the cards: **PKI** (Public Key Infrastructure — the CAs, certificates and keys
+in `/etc/kubernetes/pki/`), **CA** (Certificate Authority — the key pair that signs certificates),
+**CSR** (Certificate Signing Request), **TLS** (Transport Layer Security), **CIDR** (Classless
+Inter-Domain Routing — an IP range like `10.244.0.0/16`), **TCP/UDP** (Transmission Control
+Protocol / User Datagram Protocol), **CLI** (Command-Line Interface).
 
 The first thing to know about any component is **how it runs**, because that decides every other
 answer:
@@ -222,6 +345,7 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | The HTTPS (HTTP Secure) API (Application Programming Interface) server — the only door to cluster state |
 | **Runs as** | Static Pod on every control-plane node — `/etc/kubernetes/manifests/kube-apiserver.yaml` |
 | **Port** | **6443** (HTTPS) |
 | **Key flags** | `--advertise-address`, `--etcd-servers=https://127.0.0.1:2379`, `--service-cluster-ip-range`, `--authorization-mode=Node,RBAC`, `--enable-admission-plugins`, `--client-ca-file`, `--tls-cert-file`/`--tls-private-key-file`, `--service-account-key-file` |
@@ -235,6 +359,7 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | The cluster's key-value database ("/etc distributed") — holds every object |
 | **Runs as** | Static Pod — `/etc/kubernetes/manifests/etcd.yaml` |
 | **Ports** | **2379** clients, **2380** peers, 2381 metrics/health (localhost, HTTP) |
 | **Data** | `--data-dir=/var/lib/etcd`, mounted from the node with a `hostPath` volume |
@@ -249,6 +374,7 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | Chooses a node for each unscheduled Pod and records it in `spec.nodeName` |
 | **Runs as** | Static Pod — `/etc/kubernetes/manifests/kube-scheduler.yaml` |
 | **Port** | **10259** (HTTPS: health and metrics only) |
 | **Authenticates with** | kubeconfig `/etc/kubernetes/scheduler.conf` (a client cert for user `system:kube-scheduler`) |
@@ -262,10 +388,11 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | One process running the built-in reconcile loops (Deployment, ReplicaSet, Node, Job, certificate signing…) |
 | **Runs as** | Static Pod — `/etc/kubernetes/manifests/kube-controller-manager.yaml` |
 | **Port** | **10257** (HTTPS: health and metrics only) |
 | **Authenticates with** | kubeconfig `/etc/kubernetes/controller-manager.conf` (user `system:kube-controller-manager`) |
-| **Key flags** | `--cluster-cidr` and `--allocate-node-cidrs` (Pod IP ranges), `--service-cluster-ip-range`, `--cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt` and `--cluster-signing-key-file=…/ca.key` (signs approved CSRs), `--service-account-private-key-file=/etc/kubernetes/pki/sa.key` (signs ServiceAccount tokens), `--root-ca-file`, `--controllers` |
+| **Key flags** | `--cluster-cidr` and `--allocate-node-cidrs` (Pod IP ranges in CIDR — Classless Inter-Domain Routing — notation), `--service-cluster-ip-range`, `--cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt` and `--cluster-signing-key-file=…/ca.key` (signs approved CSRs — Certificate Signing Requests), `--service-account-private-key-file=/etc/kubernetes/pki/sa.key` (signs ServiceAccount tokens), `--root-ca-file`, `--controllers` |
 | **Leader election** | Lease `kube-system/kube-controller-manager` |
 | **Logs** | `kubectl -n kube-system logs -l component=kube-controller-manager` |
 | **Restart** | Edit the manifest |
@@ -275,6 +402,7 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | The node agent: runs the Pods bound to its node through the runtime and reports their status |
 | **Runs as** | systemd service `kubelet` on **every** node, control plane included |
 | **Ports** | **10250** (kubelet API: logs, exec, port-forward go through it), 10248 (`/healthz`, localhost) |
 | **Config file** | `/var/lib/kubelet/config.yaml` (a `KubeletConfiguration`: `staticPodPath`, `clusterDNS`, `cgroupDriver`, eviction thresholds, `authentication`/`authorization`) |
@@ -288,10 +416,11 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | The container runtime: pulls images and creates Pod sandboxes and containers on request, using runc (the OCI — Open Container Initiative — runtime) underneath |
 | **Runs as** | systemd service `containerd` on every node |
-| **Socket** | `unix:///run/containerd/containerd.sock` (the CRI endpoint the kubelet and `crictl` use) |
+| **Socket** | `unix:///run/containerd/containerd.sock` (the CRI — Container Runtime Interface — endpoint the kubelet and `crictl` use) |
 | **Config** | `/etc/containerd/config.toml` — notably `SystemdCgroup = true`, which must match the kubelet's `cgroupDriver: systemd` |
-| **CLI** | `crictl` (configured by `/etc/crictl.yaml`): `ps`, `pods`, `images`, `logs`, `inspect` |
+| **CLI** (Command-Line Interface) | `crictl` ("CRI control", configured by `/etc/crictl.yaml`): `ps`, `pods`, `images`, `logs`, `inspect` |
 | **Logs** | `journalctl -u containerd` |
 | **Restart** | `systemctl restart containerd` — running containers survive it |
 | **Typical CKA break** | Runtime stopped → node `NotReady` with *container runtime is down* in the kubelet log |
@@ -300,6 +429,7 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | Programs each node's kernel so Service virtual IPs reach the Pods behind them |
 | **Runs as** | DaemonSet `kube-system/kube-proxy`, `hostNetwork: true` |
 | **Ports** | 10256 (`/healthz`), 10249 (metrics, localhost) |
 | **Config** | ConfigMap `kube-system/kube-proxy` (key `config.conf`: `mode`, `clusterCIDR`) |
@@ -312,18 +442,20 @@ answer:
 
 | | |
 |---|---|
+| **What it is** | The cluster DNS (Domain Name System) server: resolves Service and Pod names to IPs |
 | **Runs as** | Deployment `kube-system/coredns` (2 replicas), behind Service **`kube-dns`** — usually `10.96.0.10` with kubeadm's default Service range |
-| **Ports** | 53 UDP/TCP (DNS), 9153 (metrics), 8080 (`/health`), 8181 (`/ready`) |
+| **Ports** | 53 UDP/TCP (User Datagram Protocol / Transmission Control Protocol) for DNS, 9153 (metrics), 8080 (`/health`), 8181 (`/ready`) |
 | **Config** | ConfigMap `kube-system/coredns`, key `Corefile` |
 | **How Pods find it** | The kubelet's `clusterDNS` setting is written into each Pod's `/etc/resolv.conf` |
 | **Logs** | `kubectl -n kube-system logs -l k8s-app=kube-dns` |
 | **Restart** | `kubectl -n kube-system rollout restart deploy coredns` |
 | **Typical CKA break** | Scaled to 0, a broken Corefile, or a `kube-dns` Service selector mismatch → name lookups fail |
 
-#### CNI plugin (kindnet on this cluster; Calico, Cilium or Flannel elsewhere)
+#### CNI (Container Network Interface) plugin (kindnet on this cluster; Calico, Cilium or Flannel elsewhere)
 
 | | |
 |---|---|
+| **What it is** | The Pod network: gives each Pod sandbox an interface and IP, and routes traffic between Pods across nodes |
 | **Runs as** | A DaemonSet (agent) **plus** binaries the runtime executes for each Pod |
 | **Files on the node** | Binaries in `/opt/cni/bin/`, config in `/etc/cni/net.d/` (the first file alphabetically wins) |
 | **Logs** | The DaemonSet's Pod logs; the kubelet log for *failed to set up sandbox* errors |
@@ -338,8 +470,8 @@ answer:
 ├── kubelet.conf                   kubelet → API server
 ├── controller-manager.conf        controller manager → API server
 ├── scheduler.conf                 scheduler → API server
-└── pki/
-    ├── ca.crt / ca.key            cluster CA: signs component and user client certs
+└── pki/                           PKI (Public Key Infrastructure): CAs, certificates, keys
+    ├── ca.crt / ca.key            cluster CA (Certificate Authority): signs component and user client certs
     ├── apiserver.crt / .key       API server serving cert
     ├── apiserver-kubelet-client.* API server → kubelets
     ├── apiserver-etcd-client.*    API server → etcd
